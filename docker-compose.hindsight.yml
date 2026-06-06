@@ -1,0 +1,26 @@
+name: companion-chat
+
+services:
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:0.7.0
+    ports:
+      - "127.0.0.1:8888:8888"
+      - "127.0.0.1:9999:9999"
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: openai
+      HINDSIGHT_API_LLM_API_KEY: ${OPENAI_API_KEY}
+      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_LLM_MODEL:-gpt-5.4-mini}
+      HINDSIGHT_API_EMBEDDINGS_LOCAL_MODEL: BAAI/bge-m3
+      HINDSIGHT_API_RERANKER_LOCAL_MODEL: BAAI/bge-reranker-v2-m3
+      HINDSIGHT_API_TEXT_SEARCH_EXTENSION: native
+      HINDSIGHT_API_TEXT_SEARCH_EXTENSION_NATIVE_LANGUAGE: simple
+      HINDSIGHT_API_MEMORY_OUTPUT_LANGUAGE: Traditional Chinese
+      HINDSIGHT_API_LAZY_RERANKER: "false"
+      HINDSIGHT_API_WORKER_ID: hindsight-realtime
+    volumes:
+      - hindsight-data:/home/hindsight/.pg0
+    restart: unless-stopped
+
+volumes:
+  hindsight-data:
+    name: tmp_hindsight-data

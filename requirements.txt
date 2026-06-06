@@ -1,0 +1,7 @@
+flask
+openai
+numpy
+pandas
+werkzeug
+torch
+opencc

@@ -1,0 +1,2604 @@
+﻿<!doctype html>
+<html lang="zh-Hant" class="call-active">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Realtime Speech Feedback</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --app-height: 100dvh;
+      --bg: #f5f5f7;
+      --panel: #ffffff;
+      --line: rgba(0, 0, 0, 0.08);
+      --text: #1d1d1f;
+      --text-secondary: #4b4b50;
+      --muted: #86868b;
+      --teal: #0071e3; /* Apple Blue */
+      --teal-dark: #0066cc;
+      --accent: var(--teal);
+      --accent-hover: var(--teal-dark);
+      --accent-light: rgba(0, 113, 227, 0.12);
+      --accent-subtle: rgba(0, 113, 227, 0.08);
+      --amber: #ff9500; /* Apple Orange */
+      --rose: #ff453a;  /* Apple Red */
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+      --shadow: 0 8px 30px rgba(0, 0, 0, 0.04);
+      --shadow-lg: 0 18px 52px rgba(0, 0, 0, 0.14);
+      --radius: 16px;
+      --radius-sm: 10px;
+      --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-height: 100%;
+      min-height: -webkit-fill-available;
+      background: var(--bg);
+    }
+
+    html.call-active {
+      min-height: var(--app-height, 100svh);
+      overflow-x: hidden;
+      overflow-y: auto;
+      background: #fbfbfa;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+      min-height: 100dvh;
+      width: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Icons", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      letter-spacing: 0;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    body.call-active {
+      position: static;
+      width: 100%;
+      height: auto;
+      min-height: var(--app-height, 100svh);
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior-y: auto;
+      background: #fbfbfa;
+    }
+
+    button, input, textarea {
+      font: inherit;
+    }
+
+    button {
+      border: none;
+      background: rgba(0, 0, 0, 0.04);
+      color: var(--text);
+      min-height: 38px;
+      border-radius: 980px;
+      padding: 0 16px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    button:hover:not(:disabled) {
+      background: rgba(0, 0, 0, 0.08);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.4;
+    }
+
+    body.controls-disabled button {
+      pointer-events: none !important;
+      cursor: wait !important;
+      opacity: 0.4 !important;
+    }
+
+    .primary {
+      background: var(--teal);
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .primary:hover:not(:disabled) {
+      background: var(--teal-dark);
+    }
+
+    .danger {
+      background: rgba(255, 69, 58, 0.1);
+      color: var(--rose);
+      font-weight: 500;
+    }
+
+    .danger:hover:not(:disabled) {
+      background: var(--rose);
+      color: #ffffff;
+    }
+
+    .shell {
+      width: min(1200px, calc(100vw - 48px));
+      margin: 0 auto;
+      padding: 24px 0 48px;
+    }
+
+    body.call-active .shell {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    body.call-active .topbar {
+      width: auto;
+      top: max(14px, env(safe-area-inset-top));
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 220;
+      min-height: 0;
+      border-bottom: 0;
+      margin: 0;
+      padding: 0;
+      pointer-events: none;
+    }
+
+    .brand {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: 0;
+      color: #1d1d1f;
+    }
+
+    .subtle {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 34px;
+      padding: 0 15px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      color: #1c1c1e;
+      box-shadow: 0 8px 26px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.08);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .selection-container {
+      min-height: calc(var(--app-height, 100dvh) - 48px);
+      display: grid;
+      place-items: center;
+      padding: clamp(72px, 12vh, 128px) 0 40px;
+    }
+
+    .setup-panel {
+      width: min(460px, 100%);
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      padding: 28px;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.06), 0 2px 10px rgba(0, 0, 0, 0.04);
+    }
+
+    .setup-head {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .setup-kicker {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: 0;
+    }
+
+    .setup-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 25px;
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .setup-status {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .notice {
+      background: transparent;
+      padding: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      border: none;
+    }
+
+    /* ===== Call Screen ===== */
+    .conversation {
+      display: none;
+    }
+    .conversation.active {
+      display: block;
+      position: relative;
+      width: 100%;
+      height: auto;
+      min-height: var(--app-height, 100svh);
+      z-index: 100;
+      background: #fbfbfa;
+      overflow: visible;
+    }
+
+    .call-screen {
+      position: relative;
+      width: 100%;
+      height: auto;
+      min-height: var(--app-height, 100svh);
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      overflow: visible;
+      padding: 0;
+      background: #fbfbfa;
+      isolation: isolate;
+    }
+
+    .ios-status-bar,
+    .call-user-label,
+    .sidebar-header {
+      display: none !important;
+    }
+
+    .call-status-label {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 50;
+      display: none !important;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      min-height: 28px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
+      font-size: 12px;
+      font-weight: 555;
+      color: #1c1c1e;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    @keyframes status-rotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes status-pulse {
+      0% { transform: scale(0.9); opacity: 0.6; }
+      50% { transform: scale(1.12); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.6; }
+    }
+    @keyframes status-bounce-y {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+    @keyframes status-wave-bar-anim {
+      0%, 100% { transform: scaleY(0.35); }
+      50% { transform: scaleY(1); }
+    }
+
+    .status-wave-bars {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      height: 10px;
+      width: 12px;
+    }
+    .status-wave-bars span {
+      width: 2px;
+      height: 10px;
+      background-color: #007aff;
+      border-radius: 1px;
+      animation: status-wave-bar-anim 1s ease-in-out infinite;
+      transform-origin: bottom;
+    }
+    .status-wave-bars .bar1 { animation-delay: 0.1s; }
+    .status-wave-bars .bar2 { animation-delay: 0.3s; }
+    .status-wave-bars .bar3 { animation-delay: 0.5s; }
+
+    .assistant-audio-glow {
+      --glow-level: 0;
+      --glow-scale: 0.92;
+      position: fixed;
+      left: 50%;
+      bottom: max(-26px, calc(env(safe-area-inset-bottom) - 22px));
+      width: min(1280px, calc(100vw + 420px));
+      height: 480px;
+      transform: translateX(-50%) scale(var(--glow-scale));
+      transform-origin: center bottom;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0;
+      overflow: visible;
+      filter: saturate(1.22);
+      transition: opacity 0.34s ease-out, transform 0.28s ease-out;
+      will-change: opacity, transform;
+    }
+
+    .assistant-audio-glow::before,
+    .assistant-audio-glow::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -116px;
+      transform: translateX(-50%);
+      border-radius: 50%;
+      pointer-events: none;
+      -webkit-mask-image: radial-gradient(ellipse at 50% 100%, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.54) 28%, rgba(0, 0, 0, 0.24) 56%, rgba(0, 0, 0, 0.06) 78%, transparent 100%);
+      mask-image: radial-gradient(ellipse at 50% 100%, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.54) 28%, rgba(0, 0, 0, 0.24) 56%, rgba(0, 0, 0, 0.06) 78%, transparent 100%);
+    }
+
+    .assistant-audio-glow::before {
+      width: min(1240px, calc(100vw + 420px));
+      height: 520px;
+      background:
+        radial-gradient(ellipse at 20% 92%, rgba(0, 122, 255, 0.58) 0%, rgba(0, 122, 255, 0.28) 32%, rgba(0, 122, 255, 0.09) 58%, transparent 84%),
+        radial-gradient(ellipse at 80% 90%, rgba(255, 45, 146, 0.56) 0%, rgba(255, 45, 146, 0.26) 34%, rgba(255, 45, 146, 0.08) 60%, transparent 86%),
+        radial-gradient(ellipse at 52% 100%, rgba(52, 199, 89, 0.5) 0%, rgba(52, 199, 89, 0.22) 30%, rgba(52, 199, 89, 0.07) 56%, transparent 82%),
+        radial-gradient(ellipse at 48% 78%, rgba(175, 82, 222, 0.42) 0%, rgba(175, 82, 222, 0.18) 38%, transparent 76%),
+        radial-gradient(ellipse at 50% 96%, rgba(255, 214, 10, 0.34) 0%, rgba(255, 214, 10, 0.12) 36%, transparent 72%);
+      filter: blur(calc(38px + var(--glow-level) * 18px));
+      opacity: calc(0.76 + var(--glow-level) * 0.18);
+    }
+
+    .assistant-audio-glow::after {
+      width: min(980px, calc(100vw + 220px));
+      height: 300px;
+      background:
+        radial-gradient(ellipse at 30% 84%, rgba(0, 199, 190, 0.44) 0%, rgba(0, 199, 190, 0.18) 34%, transparent 72%),
+        radial-gradient(ellipse at 70% 84%, rgba(191, 90, 242, 0.44) 0%, rgba(191, 90, 242, 0.18) 34%, transparent 72%),
+        radial-gradient(ellipse at 50% 94%, rgba(255, 255, 255, 0.48) 0%, rgba(90, 200, 250, 0.28) 18%, rgba(255, 45, 146, 0.18) 42%, transparent 74%);
+      filter: blur(calc(24px + var(--glow-level) * 10px));
+      opacity: calc(0.7 + var(--glow-level) * 0.22);
+    }
+
+    .assistant-audio-glow.is-active {
+      opacity: calc(0.16 + var(--glow-level) * 0.72);
+    }
+
+    .call-bottom-bar {
+      position: fixed;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      left: 0;
+      right: 0;
+      transform: none;
+      z-index: 50;
+      width: auto;
+      max-width: none;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0 max(18px, env(safe-area-inset-right)) 0 max(18px, env(safe-area-inset-left));
+      background: transparent;
+      border: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+
+    .right-buttons-group {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 16px;
+      margin-left: auto;
+      pointer-events: auto;
+    }
+
+    .call-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border: none;
+      padding: 0;
+      min-height: auto;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease, background-color 0.2s ease, opacity 0.15s ease;
+      box-sizing: border-box;
+      pointer-events: auto;
+    }
+    .call-btn:hover:not(:disabled) {
+      transform: scale(1.06);
+    }
+    .call-btn:active:not(:disabled) {
+      transform: scale(0.96);
+    }
+    .call-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .call-btn.back-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #ffffff;
+      color: #0b0b0b;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+    }
+    .call-btn.back-btn:hover:not(:disabled) {
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14), 0 4px 10px rgba(0, 0, 0, 0.06);
+    }
+    .call-btn.back-btn:active:not(:disabled) {
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+    }
+    .call-btn.back-btn svg {
+      width: 22px;
+      height: 22px;
+      stroke: #0b0b0b;
+    }
+
+    .call-btn.mic-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #ffffff;
+      color: #0b0b0b;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+      position: relative;
+    }
+    .call-btn.mic-btn:hover:not(:disabled) {
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14), 0 4px 10px rgba(0, 0, 0, 0.06);
+    }
+    .call-btn.mic-btn:active:not(:disabled) {
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+    }
+    .call-btn.mic-btn svg {
+      width: 22px;
+      height: 22px;
+      stroke: #0b0b0b;
+    }
+    .call-btn.mic-btn.muted {
+      background: #252424;
+      color: #ffffff;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.08);
+    }
+    .call-btn.mic-btn.muted:hover:not(:disabled) {
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22), 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+    .call-btn.mic-btn.muted svg {
+      stroke: #ffffff;
+    }
+    .mic-slash {
+      display: none;
+    }
+    .call-btn.mic-btn.muted .mic-slash {
+      display: block;
+    }
+
+    .call-btn.end-btn,
+    .call-btn.restart-btn {
+      appearance: none;
+      -webkit-appearance: none;
+      width: auto;
+      min-width: 104px;
+      height: 48px;
+      padding: 0 18px;
+      border-radius: 999px;
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 600;
+      gap: 6px;
+    }
+    .call-btn.end-btn:active:not(:disabled),
+    .call-btn.restart-btn:active:not(:disabled) {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    }
+
+    .call-btn.end-btn {
+      background: #1c1c1e;
+      box-shadow: 0 8px 26px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .call-btn.end-btn:hover:not(:disabled) {
+      background: #1c1c1e;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), 0 4px 12px rgba(0, 0, 0, 0.14);
+    }
+
+    .call-btn.restart-btn {
+      background: var(--teal);
+      box-shadow: 0 10px 22px rgba(0, 113, 227, 0.18);
+    }
+
+    .call-btn.restart-btn:hover:not(:disabled) {
+      background: var(--teal-dark);
+      box-shadow: 0 12px 28px rgba(0, 113, 227, 0.24);
+    }
+
+    .call-btn.restart-btn:active:not(:disabled) {
+      box-shadow: 0 5px 14px rgba(0, 113, 227, 0.18);
+    }
+
+    .call-btn.end-btn .pill-dots,
+    .call-btn.restart-btn .pill-dots {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      width: 24px;
+      height: 24px;
+      margin-right: 0;
+    }
+
+    .call-btn.end-btn svg,
+    .call-btn.restart-btn svg {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    .call-btn.end-btn .pill-dots i,
+    .call-btn.restart-btn .pill-dots i {
+      display: inline-block;
+      width: 4px;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.85);
+      transition: height 0.05s ease, background-color 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .video-pip {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 120px;
+      height: 160px;
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--text);
+      box-shadow: var(--shadow-lg);
+      z-index: 20;
+      border: 2px solid rgba(255,255,255,0.2);
+      cursor: grab;
+    }
+    .video-pip.pip-hidden {
+      display: none;
+    }
+    .video-pip video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transform: scaleX(-1);
+    }
+
+    /* Main transcript */
+    .transcript-sidebar {
+      position: relative;
+      z-index: 12;
+      width: 100%;
+      max-width: min(760px, 100%);
+      min-height: var(--app-height, 100svh);
+      flex: 0 0 auto;
+      margin: 0 auto;
+      background: transparent;
+      display: flex;
+      flex-direction: column;
+      overflow: visible;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 0 12px;
+      border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+    .sidebar-header h3 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0;
+    }
+    .sidebar-close-btn {
+      display: none;
+    }
+
+    .sidebar-log {
+      flex: 0 0 auto;
+      min-height: var(--app-height, 100svh);
+      overflow: visible;
+      overscroll-behavior: auto;
+      touch-action: auto;
+      padding: 20px 24px 120px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .sidebar-log > * {
+      flex: 0 0 auto;
+    }
+
+    .sidebar-log .line {
+      max-width: 85%;
+      border: none;
+      border-radius: 18px;
+      padding: 12px 16px;
+      line-height: 1.5;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+      animation: msgFadeIn 0.25s ease-out;
+    }
+
+    @keyframes msgFadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .sidebar-log .line.user {
+      align-self: flex-end;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-bottom-right-radius: 6px;
+      box-shadow: var(--shadow-sm);
+    }
+    .sidebar-log .line.assistant {
+      align-self: flex-start;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-bottom-left-radius: 6px;
+      box-shadow: var(--shadow-sm);
+    }
+    .sidebar-log .line small {
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      opacity: 0.7;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+    .sidebar-log .line.user small {
+      color: var(--muted);
+      text-align: right;
+    }
+    .sidebar-log .line.assistant small {
+      color: var(--muted);
+    }
+
+    .sidebar-log .line.draft {
+      opacity: 0.86;
+    }
+
+    .line-text {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .sidebar-log .trace-card {
+      max-width: 100%;
+      align-self: stretch;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--text);
+      overflow: hidden;
+    }
+    .trace-header {
+      appearance: none;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      min-height: 42px;
+      padding: 10px 14px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: left;
+      transition: background var(--transition);
+    }
+    .trace-header:hover:not(:disabled) {
+      background: rgba(0, 0, 0, 0.035);
+    }
+    .trace-header::after {
+      content: "";
+      width: 0;
+      height: 0;
+      border-top: 5px solid transparent;
+      border-bottom: 5px solid transparent;
+      border-left: 6px solid var(--muted);
+      transition: transform 0.18s ease;
+    }
+    .trace-header[aria-expanded="true"]::after {
+      transform: rotate(90deg);
+    }
+    .trace-title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .trace-status {
+      flex-shrink: 0;
+      max-width: 45%;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .trace-status.strategy-tag {
+      max-width: none;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-light);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .trace-detail-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 260;
+      background: rgba(251, 251, 250, 0.96);
+      display: flex;
+      justify-content: center;
+      touch-action: pan-y;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    .trace-detail-backdrop[hidden] {
+      display: none !important;
+    }
+    .trace-detail-panel {
+      width: min(900px, 100%);
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      box-shadow: var(--shadow-lg);
+    }
+    .trace-detail-header {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    .trace-detail-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .trace-detail-status {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .trace-detail-close {
+      min-width: 40px;
+      width: 40px;
+      height: 40px;
+      min-height: 40px;
+      padding: 0;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.06);
+      color: var(--text);
+      font-size: 18px;
+      line-height: 1;
+      transition: all var(--transition);
+    }
+    .trace-detail-close:hover:not(:disabled) {
+      background: rgba(0, 0, 0, 0.12);
+    }
+    .trace-detail-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
+      padding: 20px 24px 36px;
+    }
+    .trace-detail-section + .trace-detail-section {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+    .trace-detail-section-title {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+    .trace-detail-body pre {
+      margin: 0;
+      color: var(--text-secondary);
+      font-family: 'SF Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    /* Hidden audio element */
+    audio { display: none; }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Scrollbar styling */
+    .sidebar-log::-webkit-scrollbar,
+    .trace-detail-body::-webkit-scrollbar,
+    .user-list::-webkit-scrollbar {
+      width: 6px;
+    }
+    .sidebar-log::-webkit-scrollbar-track,
+    .trace-detail-body::-webkit-scrollbar-track,
+    .user-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .sidebar-log::-webkit-scrollbar-thumb,
+    .trace-detail-body::-webkit-scrollbar-thumb,
+    .user-list::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.18);
+      border-radius: 3px;
+    }
+    .sidebar-log::-webkit-scrollbar-thumb:hover,
+    .trace-detail-body::-webkit-scrollbar-thumb:hover,
+    .user-list::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.32);
+    }
+
+    @media (max-width: 860px) {
+      .shell {
+        width: min(100vw - 24px, 720px);
+        padding-top: 16px;
+      }
+
+      .selection-container {
+        min-height: calc(var(--app-height, 100dvh) - 32px);
+        padding: 76px 0 28px;
+      }
+
+      .setup-panel {
+        width: 100%;
+        gap: 18px;
+        padding: 20px;
+      }
+
+      .setup-title {
+        font-size: 23px;
+      }
+
+      .topbar {
+        top: 14px;
+        width: calc(100vw - 28px);
+      }
+
+      .toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+        padding: 14px;
+      }
+
+      .settings-group {
+        grid-template-columns: 1fr;
+      }
+
+      .actions-group {
+        justify-content: space-between;
+        margin-left: 0;
+      }
+
+      .user-list {
+        max-height: none;
+      }
+
+      .call-screen {
+        padding: 0 !important;
+      }
+
+      .call-bottom-bar {
+        gap: 12px;
+        bottom: max(14px, env(safe-area-inset-bottom));
+        justify-content: flex-end;
+        padding: 0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
+      }
+
+      .call-btn {
+        width: 48px;
+        height: 48px;
+      }
+
+      .call-btn.end-btn,
+      .call-btn.restart-btn {
+        min-width: 104px;
+        height: 48px;
+        padding: 0 18px;
+        font-size: 15px;
+      }
+
+      .ios-status-bar {
+        top: 16px;
+        width: min(430px, calc(100% - 24px));
+      }
+
+      .status-time {
+        font-size: 20px;
+      }
+
+      .dynamic-island {
+        width: clamp(178px, 50vw, 216px);
+      }
+
+      .transcript-sidebar {
+        width: 100%;
+      }
+
+      .video-pip {
+        width: 90px;
+        height: 120px;
+        top: 12px;
+        right: 12px;
+      }
+    }
+
+    .assistant-feedback {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .assistant-feedback textarea {
+      width: 100%;
+      min-height: 60px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1.45;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s ease;
+      -webkit-text-size-adjust: 100%;
+      touch-action: manipulation;
+    }
+    .assistant-feedback textarea:focus {
+      border-color: var(--accent);
+    }
+  </style>
+</head>
+<body class="call-active">
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>Realtime Speech</h1>
+        <span class="subtle" id="selectedUserLabel">準備開始新對話</span>
+      </div>
+      <span class="status-pill" id="statusPill">未連線</span>
+    </header>
+
+    <section id="selectionView" class="selection-container hidden" aria-hidden="true">
+      <div class="setup-panel">
+        <div class="setup-head">
+          <span class="setup-kicker">回饋對話</span>
+          <h2 class="setup-title">開始新對話</h2>
+          <p class="setup-status" id="sessionStatus">準備開始新對話</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="conversationView" class="conversation active">
+      <div class="call-screen">
+        <!-- Floating camera pip -->
+        <div class="video-pip pip-hidden" id="videoPip">
+          <video id="localVideo" muted playsinline></video>
+        </div>
+        <audio id="remoteAudio" autoplay></audio>
+
+        <div class="call-status-label" id="callStatusLabel"></div>
+        <div class="call-user-label" id="callUserLabel"></div>
+        <div class="assistant-audio-glow" id="assistantAudioGlow" aria-hidden="true"></div>
+
+        <!-- Bottom bar -->
+        <div class="call-bottom-bar">
+          <div class="right-buttons-group">
+            <button class="call-btn mic-btn" id="muteMicButton" type="button" disabled title="靜音" aria-label="靜音" aria-pressed="false">
+              <svg class="voice-orb-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
+                <path class="mic-slash" stroke-linecap="round" stroke-linejoin="round" d="M4.8 4.8 19.2 19.2" />
+              </svg>
+            </button>
+            <button class="call-btn end-btn" id="endSessionButton" type="button" title="結束對話">
+              <span class="pill-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>結束</span>
+            </button>
+          </div>
+        </div>
+
+        <aside class="transcript-sidebar" id="transcriptSidebar">
+          <div class="sidebar-header">
+            <h3>對話紀錄</h3>
+          </div>
+          <div class="sidebar-log" id="transcriptLog"></div>
+        </aside>
+
+        <div class="trace-detail-backdrop" id="traceDetailBackdrop" hidden>
+          <section class="trace-detail-panel" role="dialog" aria-modal="true" aria-labelledby="traceDetailTitle">
+            <header class="trace-detail-header">
+              <div>
+                <h3 class="trace-detail-title" id="traceDetailTitle">Prompt / Response</h3>
+                <span class="trace-detail-status" id="traceDetailStatus"></span>
+              </div>
+              <button class="trace-detail-close" id="traceDetailCloseButton" type="button" aria-label="關閉">×</button>
+            </header>
+            <div class="trace-detail-body">
+              <section class="trace-detail-section">
+                <h4 class="trace-detail-section-title">Prompt</h4>
+                <pre id="traceDetailPrompt"></pre>
+              </section>
+              <section class="trace-detail-section">
+                <h4 class="trace-detail-section-title">Response</h4>
+                <pre id="traceDetailResponse"></pre>
+              </section>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const SCRIPT_ROOT = {{ request.script_root|tojson }};
+    const REALTIME_MODE_LISTENING = "listening";
+    const REALTIME_MODE_GUIDANCE = "guidance";
+    const EMOTION_CONTEXT_TURN_COUNT = 3;
+    const INITIAL_NEUTRAL_TURN_COUNT = 3;
+    const USER_IDLE_TIMEOUT_MS = 60 * 1000;
+    const API_BASE = SCRIPT_ROOT || inferPathPrefix();
+    const END_SESSION_ICON = '<span class="pill-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>結束</span>';
+    const RESTART_SESSION_ICON = '<svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M20 6v5h-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 18v-5h5"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.2 9A7 7 0 0 0 6.3 6.4L4 8.7"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.8 15a7 7 0 0 0 11.9 2.6L20 15.3"/></svg><span>重新開始</span>';
+    const SESSION_PHASE = Object.freeze({
+      SELECTING: "selecting",
+      STARTING: "starting",
+      LIVE: "live",
+      UPLOADING: "uploading",
+      ENDED: "ended",
+      ERROR: "error",
+      RESTARTING: "restarting",
+    });
+
+    const els = {
+      statusPill: document.getElementById("statusPill"),
+      selectedUserLabel: document.getElementById("selectedUserLabel"),
+      selectionView: document.getElementById("selectionView"),
+      conversationView: document.getElementById("conversationView"),
+      sessionStatus: document.getElementById("sessionStatus"),
+      localVideo: document.getElementById("localVideo"),
+      remoteAudio: document.getElementById("remoteAudio"),
+      endSessionButton: document.getElementById("endSessionButton"),
+      muteMicButton: document.getElementById("muteMicButton"),
+      sessionNotice: document.getElementById("sessionNotice"),
+      sessionHashText: document.getElementById("sessionHashText"),
+      modeText: document.getElementById("modeText"),
+      negativeText: document.getElementById("negativeText"),
+      frameCountText: document.getElementById("frameCountText"),
+      transcriptLog: document.getElementById("transcriptLog"),
+      visualizerCanvas: document.getElementById("visualizerCanvas"),
+      callStatusLabel: document.getElementById("callStatusLabel"),
+      callUserLabel: document.getElementById("callUserLabel"),
+      assistantAudioGlow: document.getElementById("assistantAudioGlow"),
+      videoPip: document.getElementById("videoPip"),
+      transcriptSidebar: document.getElementById("transcriptSidebar"),
+      sidebarToggleButton: document.getElementById("sidebarToggleButton"),
+      closeSidebarButton: document.getElementById("closeSidebarButton"),
+      traceDetailBackdrop: document.getElementById("traceDetailBackdrop"),
+      traceDetailTitle: document.getElementById("traceDetailTitle"),
+      traceDetailStatus: document.getElementById("traceDetailStatus"),
+      traceDetailPrompt: document.getElementById("traceDetailPrompt"),
+      traceDetailResponse: document.getElementById("traceDetailResponse"),
+      traceDetailCloseButton: document.getElementById("traceDetailCloseButton"),
+    };
+
+    const state = {
+      sessionHash: "",
+      startedAtMs: 0,
+      pc: null,
+      dc: null,
+      localStream: null,
+      remoteStream: null,
+      microphoneMuted: false,
+      sessionPhase: SESSION_PHASE.SELECTING,
+      sessionReady: false,
+      sessionStarting: false,
+      uploading: false,
+      endButtonUnlocked: false,
+      medicalQaEnabled: false,
+      stopping: false,
+      restartReady: false,
+      idleTimer: null,
+      sessionGeneration: 0,
+      currentResponseId: "",
+      currentConversationMode: "",
+      userTurnCount: 0,
+      consecutiveNegativeEmotionTurns: 0,
+      transcriptEvents: [],
+      transcriptLines: [],
+      transcriptDedupe: new Set(),
+      feedbackRecords: [],
+      feedbackEditors: [],
+      emotionHistory: [],
+      pendingAssistantTrace: null,
+      pendingEmotionDetail: null,
+      activeTraceDetail: null,
+      currentUserItemId: "",
+      currentAssistantItemId: "",
+      userTranscriptBuffer: "",
+      assistantTranscriptBuffer: "",
+      responseRequestGeneration: 0,
+    };
+
+    const endButtonController = createEndButtonController(els.endSessionButton, {
+      onEnd: () => stopAndUpload("user_stop"),
+      onRestart: () => startNextSession(),
+    });
+
+    function updateViewportHeightVar() {
+      const viewport = window.visualViewport;
+      const height = viewport?.height || window.innerHeight || document.documentElement.clientHeight;
+      if (!height) return;
+      document.documentElement.style.setProperty("--app-height", `${Math.round(height * 100) / 100}px`);
+    }
+
+    function scrollConversationToLatest() {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
+      });
+    }
+
+    updateViewportHeightVar();
+    window.addEventListener("resize", updateViewportHeightVar, { passive: true });
+    window.addEventListener("orientationchange", updateViewportHeightVar, { passive: true });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", updateViewportHeightVar, { passive: true });
+      window.visualViewport.addEventListener("scroll", updateViewportHeightVar, { passive: true });
+    }
+
+    els.endSessionButton.addEventListener("click", () => endButtonController.handleClick());
+    els.muteMicButton.addEventListener("click", toggleMicrophoneMute);
+    if (els.sidebarToggleButton) {
+      els.sidebarToggleButton.addEventListener("click", () => {
+        els.transcriptSidebar.classList.toggle("open");
+      });
+    }
+    if (els.closeSidebarButton) {
+      els.closeSidebarButton.addEventListener("click", () => {
+        els.transcriptSidebar.classList.remove("open");
+      });
+    }
+    els.traceDetailCloseButton.addEventListener("click", closeTraceDetail);
+    els.traceDetailBackdrop.addEventListener("click", (event) => {
+      if (event.target === els.traceDetailBackdrop) closeTraceDetail();
+    });
+
+    window.addEventListener("beforeunload", (event) => {
+      if (state.sessionReady && !state.stopping) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    });
+
+    setStatus("未連線");
+    setSessionPhase(SESSION_PHASE.SELECTING);
+    setSessionStatus("準備開始新對話");
+    window.setTimeout(() => startConversation(), 0);
+
+    function createSessionHash() {
+      if (window.crypto?.getRandomValues) {
+        const bytes = new Uint8Array(12);
+        window.crypto.getRandomValues(bytes);
+        return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      }
+      return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 18)}`.slice(0, 24);
+    }
+
+    function clearIdleAutoEndTimer() {
+      if (state.idleTimer) {
+        window.clearTimeout(state.idleTimer);
+        state.idleTimer = null;
+      }
+    }
+
+    function resetIdleAutoEndTimer() {
+      clearIdleAutoEndTimer();
+      if (!state.sessionReady || state.stopping || state.restartReady) return;
+      state.idleTimer = window.setTimeout(() => {
+        autoEndIdleSession();
+      }, USER_IDLE_TIMEOUT_MS);
+    }
+
+    async function autoEndIdleSession() {
+      state.idleTimer = null;
+      if (!state.sessionReady || state.stopping || state.restartReady) return;
+      setNotice("已超過 1 分鐘沒有偵測到使用者說話，自動結束對話...");
+      await stopAndUpload("idle_timeout");
+    }
+
+    async function startConversation() {
+      const sessionGeneration = ++state.sessionGeneration;
+      state.sessionHash = createSessionHash();
+      setSessionStatus(`本次 session_hash ${state.sessionHash}`);
+      state.startedAtMs = Date.now();
+      state.responseRequestGeneration++;
+      state.currentConversationMode = "";
+      state.userTurnCount = 0;
+      state.consecutiveNegativeEmotionTurns = 0;
+      state.medicalQaEnabled = false;
+      state.currentResponseId = "";
+      state.transcriptEvents = [];
+      state.transcriptLines = [];
+      state.transcriptDedupe = new Set();
+      state.feedbackRecords = [];
+      state.feedbackEditors = [];
+      state.emotionHistory = [];
+      state.pendingAssistantTrace = null;
+      state.pendingEmotionDetail = null;
+      state.activeTraceDetail = null;
+      state.currentUserItemId = "";
+      state.currentAssistantItemId = "";
+      state.userTranscriptBuffer = "";
+      state.assistantTranscriptBuffer = "";
+      state.stopping = false;
+      state.microphoneMuted = false;
+      setSessionPhase(SESSION_PHASE.STARTING);
+
+      els.selectionView.classList.add("hidden");
+      els.conversationView.classList.add("active");
+      document.body.classList.add("call-active");
+      document.documentElement.classList.add("call-active");
+      updateViewportHeightVar();
+      els.selectedUserLabel.textContent = `session_hash ${state.sessionHash}`;
+      els.callUserLabel.textContent = "新對話";
+      els.callStatusLabel.textContent = "連線中...";
+      if (els.sessionHashText) els.sessionHashText.textContent = state.sessionHash;
+      els.transcriptLog.innerHTML = "";
+      closeTraceDetail();
+      if (els.transcriptSidebar) els.transcriptSidebar.classList.remove("open");
+      setMicrophoneButtonEnabled(false);
+      setMicrophoneMuted(false);
+      setStatus("啟動中");
+      setNotice("正在開啟麥克風與 Realtime 連線...");
+      updateModeUi();
+
+      try {
+        await startMediaCapture();
+        setMicrophoneButtonEnabled(true);
+        startVisualizer();
+        await startRealtimePeerConnection(sessionGeneration);
+        if (sessionGeneration !== state.sessionGeneration) return;
+        markSessionReady();
+        els.callStatusLabel.textContent = "已連線";
+        setNotice("已連線，請開始說話。");
+      } catch (error) {
+        setNotice(`啟動失敗：${error.message}`);
+        els.callStatusLabel.textContent = "啟動失敗";
+        await cleanupSession(false);
+        setSessionPhase(SESSION_PHASE.ERROR);
+        setMicrophoneButtonEnabled(false);
+        setStatus("錯誤");
+      }
+    }
+
+    async function startMediaCapture() {
+      const mediaConstraints = {
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      state.localStream = stream;
+      els.localVideo.srcObject = null;
+      els.videoPip.classList.add("pip-hidden");
+      if (els.frameCountText) els.frameCountText.textContent = "關閉";
+    }
+
+    async function startRealtimePeerConnection(sessionGeneration) {
+      const secretData = await fetchJson(apiPath("/api/realtime-client-secret"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_hash: state.sessionHash,
+          conversation_mode: state.currentConversationMode,
+        }),
+      });
+      const ephemeralKey = secretData.value || secretData.client_secret?.value || "";
+      if (!ephemeralKey) {
+        throw new Error("無法取得 Realtime client secret");
+      }
+      if (sessionGeneration !== state.sessionGeneration) return;
+      state.medicalQaEnabled = Boolean(secretData.medical_qa_enabled);
+
+      const pc = new RTCPeerConnection();
+      state.pc = pc;
+      state.remoteStream = new MediaStream();
+      els.remoteAudio.srcObject = state.remoteStream;
+
+      pc.ontrack = async (event) => {
+        if (sessionGeneration !== state.sessionGeneration) return;
+        for (const track of event.streams[0].getTracks()) {
+          state.remoteStream.addTrack(track);
+        }
+      };
+
+      if (sessionGeneration !== state.sessionGeneration || !state.localStream) return;
+      for (const track of state.localStream.getAudioTracks()) {
+        pc.addTrack(track, state.localStream);
+      }
+
+      const dc = pc.createDataChannel("oai-events");
+      state.dc = dc;
+      dc.addEventListener("open", () => {
+        if (sessionGeneration !== state.sessionGeneration) return;
+        markSessionReady();
+        setStatus("已連線");
+        resetIdleAutoEndTimer();
+      });
+      dc.addEventListener("message", (event) => handleRealtimeEvent(event.data, sessionGeneration));
+      dc.addEventListener("close", () => {
+        if (sessionGeneration !== state.sessionGeneration) return;
+        if (!state.stopping) {
+          setSessionPhase(SESSION_PHASE.ERROR);
+          setStatus("未連線");
+        }
+      });
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
+        method: "POST",
+        body: offer.sdp,
+        headers: {
+          "Authorization": `Bearer ${ephemeralKey}`,
+          "Content-Type": "application/sdp",
+        },
+      });
+
+      if (sessionGeneration !== state.sessionGeneration) return;
+      if (!sdpResponse.ok) {
+        const body = await sdpResponse.text();
+        throw new Error(`Realtime SDP 建立失敗：${sdpResponse.status} ${body.slice(0, 180)}`);
+      }
+
+      await pc.setRemoteDescription({
+        type: "answer",
+        sdp: await sdpResponse.text(),
+      });
+    }
+
+    function handleRealtimeEvent(rawMessage, sessionGeneration) {
+      if (sessionGeneration !== state.sessionGeneration) return;
+      let event;
+      try {
+        event = JSON.parse(rawMessage);
+      } catch {
+        return;
+      }
+
+      switch (event.type) {
+        case "session.created":
+        case "session.updated":
+          markSessionReady();
+          setStatus("已連線");
+          resetIdleAutoEndTimer();
+          break;
+        case "response.created":
+          state.currentResponseId = event.response?.id || "";
+          setStatus("正在思考");
+          break;
+        case "input_audio_buffer.speech_started":
+          clearIdleAutoEndTimer();
+          state.responseRequestGeneration++;
+          state.currentUserItemId = "";
+          state.userTranscriptBuffer = "";
+          if (state.currentResponseId) {
+            sendRealtimeEvent({ type: "response.cancel", response_id: state.currentResponseId });
+          }
+          setStatus("使用者說話中");
+          break;
+        case "input_audio_buffer.speech_stopped":
+          resetIdleAutoEndTimer();
+          setStatus("正在思考");
+          break;
+        case "conversation.item.input_audio_transcription.segment":
+          appendUserTranscript(event.item_id || "", event.text || "");
+          break;
+        case "conversation.item.input_audio_transcription.completed":
+          completeUserTranscript(event.item_id || "", event.transcript || "");
+          break;
+        case "response.audio.delta":
+        case "response.output_audio.delta":
+          setStatus("助理回覆中");
+          break;
+        case "response.audio_transcript.delta":
+        case "response.output_audio_transcript.delta":
+          setStatus("助理回覆中");
+          appendAssistantTranscript(event.item_id || "", event.delta || "");
+          break;
+        case "response.output_text.delta":
+          appendAssistantTranscript(event.item_id || "", event.delta || "");
+          break;
+        case "response.audio.done":
+        case "response.output_audio.done":
+          break;
+        case "response.audio_transcript.done":
+        case "response.output_audio_transcript.done":
+          completeAssistantTranscript(event.item_id || "", event.transcript || "");
+          break;
+        case "response.output_text.done":
+          completeAssistantTranscript(event.item_id || "", event.text || "");
+          break;
+        case "response.done":
+          if (!handleFunctionCalls(event.response)) {
+            state.currentResponseId = "";
+            setStatus("聆聽中");
+          }
+          break;
+        case "error":
+          setNotice(`Realtime 錯誤：${event.error?.message || "unknown error"}`);
+          break;
+        default:
+          break;
+      }
+    }
+
+    function appendUserTranscript(itemId, text) {
+      if (!text) return;
+      if (state.currentUserItemId !== itemId) {
+        state.currentUserItemId = itemId;
+        state.userTranscriptBuffer = "";
+      }
+      state.userTranscriptBuffer += text;
+    }
+
+    async function completeUserTranscript(itemId, transcript) {
+      const rawText = (transcript || state.userTranscriptBuffer || "").trim();
+      state.currentUserItemId = itemId;
+      state.userTranscriptBuffer = rawText;
+      if (!rawText) return;
+      const text = await convertTranscriptToTraditional(rawText);
+      state.userTranscriptBuffer = text;
+      if (!text) return;
+      recordTranscript("user", itemId, text);
+      appendEmotionHistory("user", text);
+      state.userTurnCount += 1;
+      resetIdleAutoEndTimer();
+      requestEmotionThenAssistantResponse();
+    }
+
+    function appendAssistantTranscript(itemId, text) {
+      if (!text) return;
+      resetIdleAutoEndTimer();
+      if (state.currentAssistantItemId !== itemId) {
+        state.currentAssistantItemId = itemId;
+        state.assistantTranscriptBuffer = "";
+      }
+      state.assistantTranscriptBuffer += text;
+    }
+
+    async function completeAssistantTranscript(itemId, transcript) {
+      const rawText = (transcript || state.assistantTranscriptBuffer || "").trim();
+      state.currentAssistantItemId = itemId;
+      state.assistantTranscriptBuffer = rawText;
+      if (!rawText) return;
+      const text = await convertTranscriptToTraditional(rawText);
+      state.assistantTranscriptBuffer = text;
+      if (!text) return;
+      recordTranscript("assistant", itemId, text);
+      appendEmotionHistory("assistant", text);
+      resetIdleAutoEndTimer();
+      if (state.pendingAssistantTrace) {
+        const response = state.pendingAssistantTrace.responsePrefix
+          ? joinTraceBlocks(state.pendingAssistantTrace.responsePrefix, traceBlock("模型回覆", text))
+          : text;
+        updateTraceCard(state.pendingAssistantTrace, {
+          status: "完成",
+          prompt: state.pendingAssistantTrace.prompt || "",
+          response,
+        });
+        state.pendingAssistantTrace = null;
+      }
+    }
+
+    function recordTranscript(speaker, itemId, text) {
+      const normalizedText = (text || "").trim();
+      if (!normalizedText) return;
+      const key = `${speaker}:${itemId}:${normalizedText}`;
+      if (state.transcriptDedupe.has(key)) return null;
+      state.transcriptDedupe.add(key);
+
+      const item = {
+        speaker,
+        item_id: itemId || null,
+        text: normalizedText,
+        timestamp_ms: Date.now(),
+      };
+      if (speaker === "assistant") {
+        item.feedback = null;
+      }
+      state.transcriptEvents.push(item);
+      state.transcriptLines.push(`${speaker === "user" ? "USER" : "ASSISTANT"}: ${normalizedText}`);
+      addTranscriptLine(speaker, normalizedText, item);
+      return item;
+    }
+
+    function addTranscriptLine(speaker, text, item) {
+      const row = document.createElement("div");
+      row.className = `line ${speaker}`;
+      const speakerLabel = document.createElement("small");
+      speakerLabel.textContent = speaker === "user" ? "user" : "Assistant";
+      const textEl = document.createElement("div");
+      textEl.className = "line-text";
+      textEl.textContent = text;
+      row.appendChild(speakerLabel);
+      row.appendChild(textEl);
+      if (speaker === "assistant" && item) {
+        addAssistantFeedbackForm(row, item);
+      }
+      els.transcriptLog.appendChild(row);
+      scrollConversationToLatest();
+    }
+
+    function addAssistantFeedbackForm(row, item) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "assistant-feedback";
+
+      const textarea = document.createElement("textarea");
+      textarea.placeholder = "對這段模型回覆留下意見...";
+      textarea.setAttribute("aria-label", "模型回覆意見");
+
+      wrapper.appendChild(textarea);
+      row.appendChild(wrapper);
+      state.feedbackEditors.push({ item, textarea });
+    }
+
+    function findPreviousUserUtterance(item) {
+      let itemIndex = state.transcriptEvents.indexOf(item);
+      if (itemIndex < 0 && item?.item_id) {
+        itemIndex = state.transcriptEvents.findIndex((event) => (
+          event.speaker === "assistant" && event.item_id === item.item_id
+        ));
+      }
+      if (itemIndex < 0) return "";
+
+      for (let index = itemIndex - 1; index >= 0; index--) {
+        const event = state.transcriptEvents[index];
+        if (event?.speaker === "user" && (event.text || "").trim()) {
+          return event.text.trim();
+        }
+      }
+      return "";
+    }
+
+    function buildAssistantFeedbackRecord(item, feedbackText, savedAt = "") {
+      return {
+        session_hash: state.sessionHash,
+        item_id: item.item_id || null,
+        response_text: item.text,
+        feedback_text: feedbackText,
+        user_utterance: findPreviousUserUtterance(item),
+        updated_at: savedAt || new Date().toISOString(),
+        source: "web_realtime_feedback",
+      };
+    }
+
+    function upsertAssistantFeedbackRecord(record) {
+      const index = state.feedbackRecords.findIndex((existing) => {
+        if (record.item_id && existing.item_id === record.item_id) return true;
+        return !record.item_id && existing.response_text === record.response_text;
+      });
+      if (index >= 0) {
+        state.feedbackRecords[index] = { ...state.feedbackRecords[index], ...record };
+      } else {
+        state.feedbackRecords.push(record);
+      }
+      return index >= 0 ? state.feedbackRecords[index] : record;
+    }
+
+    function syncPendingFeedbackFromEditors() {
+      for (const editor of state.feedbackEditors) {
+        const feedbackText = (editor.textarea?.value || "").trim();
+        if (!feedbackText) continue;
+        const record = buildAssistantFeedbackRecord(editor.item, feedbackText);
+        editor.item.feedback = upsertAssistantFeedbackRecord(record);
+      }
+    }
+
+    function addTraceCard(title, status, content = {}, options = {}) {
+      const card = document.createElement("article");
+      card.className = "trace-card";
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "trace-header";
+      toggle.setAttribute("aria-expanded", "false");
+      const titleEl = document.createElement("span");
+      titleEl.className = "trace-title";
+      titleEl.textContent = title;
+      const statusEl = document.createElement("span");
+      statusEl.className = "trace-status";
+      if (options.statusClass) statusEl.classList.add(options.statusClass);
+      statusEl.textContent = status;
+      toggle.appendChild(titleEl);
+      toggle.appendChild(statusEl);
+
+      card.appendChild(toggle);
+      els.transcriptLog.appendChild(card);
+
+      const trace = {
+        card,
+        toggle,
+        titleEl,
+        statusEl,
+        prompt: "",
+        response: "",
+      };
+      toggle.addEventListener("click", () => openTraceDetail(trace));
+      updateTraceCard(trace, { status, ...normalizeTraceContent(content) });
+      return trace;
+    }
+
+    function updateTraceCard(trace, { title, status, prompt, response, details } = {}) {
+      if (!trace) return;
+      if (title) trace.titleEl.textContent = title;
+      if (status) trace.statusEl.textContent = status;
+      if (details !== undefined) {
+        const normalized = normalizeTraceContent(details);
+        prompt = normalized.prompt;
+        response = normalized.response;
+      }
+      if (prompt !== undefined) {
+        trace.prompt = formatTraceDetails(prompt);
+      }
+      if (response !== undefined) {
+        trace.response = formatTraceDetails(response);
+      }
+      if (state.activeTraceDetail === trace) {
+        renderTraceDetail(trace);
+      }
+      scrollConversationToLatest();
+    }
+
+    function openTraceDetail(trace) {
+      if (state.activeTraceDetail && state.activeTraceDetail !== trace) {
+        state.activeTraceDetail.toggle.setAttribute("aria-expanded", "false");
+      }
+      state.activeTraceDetail = trace;
+      trace.toggle.setAttribute("aria-expanded", "true");
+      renderTraceDetail(trace);
+      els.traceDetailBackdrop.hidden = false;
+    }
+
+    function closeTraceDetail() {
+      if (state.activeTraceDetail) {
+        state.activeTraceDetail.toggle.setAttribute("aria-expanded", "false");
+      }
+      state.activeTraceDetail = null;
+      els.traceDetailBackdrop.hidden = true;
+    }
+
+    function renderTraceDetail(trace) {
+      els.traceDetailTitle.textContent = trace.titleEl.textContent || "Prompt / Response";
+      els.traceDetailStatus.textContent = trace.statusEl.textContent || "";
+      els.traceDetailPrompt.textContent = trace.prompt || "";
+      els.traceDetailResponse.textContent = trace.response || "";
+    }
+
+    function formatTraceDetails(details) {
+      if (typeof details === "string") return details;
+      return JSON.stringify(details || {}, null, 2);
+    }
+
+    function traceContent(prompt, response) {
+      return { prompt, response };
+    }
+
+    function traceBlock(title, content) {
+      return `【${title}】\n${formatTraceDetails(content)}`;
+    }
+
+    function joinTraceBlocks(...blocks) {
+      return blocks.filter((block) => block && String(block).trim()).join("\n\n");
+    }
+
+    function normalizeTraceContent(content) {
+      if (content && typeof content === "object" && ("prompt" in content || "response" in content)) {
+        return {
+          prompt: content.prompt ?? "",
+          response: content.response ?? "",
+        };
+      }
+      return {
+        prompt: "",
+        response: content ?? "",
+      };
+    }
+
+    function emotionLabel(emotion) {
+      if (emotion === "negative") return "負向";
+      if (emotion === "positive") return "正向";
+      return "中性";
+    }
+
+    function conversationModeLabel(mode) {
+      if (!mode) return "";
+      return mode === REALTIME_MODE_GUIDANCE ? "建議模式" : "傾聽模式";
+    }
+
+    function toolLabel(name) {
+      if (name === "medical_qa") return "醫療問答";
+      if (name === "search_web") return "Web search";
+      return name || "工具";
+    }
+
+    async function convertTranscriptToTraditional(text) {
+      const rawText = (text || "").trim();
+      if (!rawText) return "";
+      try {
+        const data = await fetchJson(apiPath("/api/convert-traditional"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: rawText }),
+        });
+        return (data.text || rawText).trim();
+      } catch (error) {
+        setNotice(`繁體轉換失敗，使用原始轉錄：${error.message}`);
+        return rawText;
+      }
+    }
+
+
+    function appendEmotionHistory(role, text) {
+      state.emotionHistory.push({ role, text });
+      const maxMessages = EMOTION_CONTEXT_TURN_COUNT * 2;
+      while (state.emotionHistory.length > maxMessages) {
+        state.emotionHistory.shift();
+      }
+    }
+
+    async function requestEmotionThenAssistantResponse() {
+      const requestId = ++state.responseRequestGeneration;
+      state.pendingEmotionDetail = null;
+      if (state.userTurnCount <= INITIAL_NEUTRAL_TURN_COUNT) {
+        state.currentConversationMode = "";
+        state.consecutiveNegativeEmotionTurns = 0;
+        updateModeUi();
+        await requestAssistantResponse("default", "auto");
+        return;
+      }
+      setStatus("情緒判斷中");
+      try {
+        const data = await fetchJson(apiPath("/api/realtime-emotion"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_hash: state.sessionHash,
+            messages: state.emotionHistory,
+          }),
+        });
+        if (requestId !== state.responseRequestGeneration || state.stopping) return;
+        const emotion = ["positive", "neutral", "negative"].includes(data.emotion)
+          ? data.emotion
+          : "neutral";
+        state.currentConversationMode = data.conversation_mode || REALTIME_MODE_LISTENING;
+        if (emotion === "negative") {
+          state.consecutiveNegativeEmotionTurns += 1;
+        } else {
+          state.consecutiveNegativeEmotionTurns = 0;
+        }
+        const strategyLabel = conversationModeLabel(state.currentConversationMode);
+        state.pendingEmotionDetail = {
+          label: strategyLabel,
+          prompt: data.prompt || "",
+          response: joinTraceBlocks(
+            traceBlock("分類結果", {
+              emotion: emotionLabel(emotion),
+              conversation_mode: strategyLabel,
+            }),
+            data.raw_content || ""
+          ),
+        };
+        addTraceCard(
+          "情緒/策略分類",
+          state.pendingEmotionDetail.label,
+          traceContent(state.pendingEmotionDetail.prompt, state.pendingEmotionDetail.response),
+          { statusClass: "strategy-tag" }
+        );
+        state.pendingEmotionDetail = null;
+        updateModeUi();
+      } catch (error) {
+        if (requestId !== state.responseRequestGeneration || state.stopping) return;
+        state.currentConversationMode = REALTIME_MODE_LISTENING;
+        state.pendingEmotionDetail = {
+          label: "失敗，使用傾聽模式",
+          prompt: "情緒分類 prompt 建立或呼叫失敗",
+          response: error.message,
+        };
+        addTraceCard(
+          "情緒/策略分類",
+          state.pendingEmotionDetail.label,
+          traceContent(state.pendingEmotionDetail.prompt, state.pendingEmotionDetail.response),
+          { statusClass: "strategy-tag" }
+        );
+        state.pendingEmotionDetail = null;
+        setNotice(`情緒判斷失敗，使用傾聽模式：${error.message}`);
+        updateModeUi();
+      }
+      await requestAssistantResponse("default", "auto");
+    }
+
+    async function requestAssistantResponse(kind, toolChoice, traceOverride = null, promptSuffix = "") {
+      if (!state.dc || state.dc.readyState !== "open" || state.stopping) return;
+      const requestId = state.responseRequestGeneration;
+      const latestUserTranscript = getLatestUserTranscript();
+      const resolvedToolChoice = toolChoice;
+      const data = await fetchJson(apiPath("/api/realtime-response-instructions"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind,
+          conversation_mode: state.currentConversationMode,
+          user_transcript: latestUserTranscript,
+        }),
+      });
+      if (requestId !== state.responseRequestGeneration || state.stopping) return;
+      state.pendingEmotionDetail = null;
+      const assistantInstructions = `${data.instructions}${promptSuffix ? `\n\n${promptSuffix}` : ""}`;
+      const priorPrompt = traceOverride?.prompt || "";
+      const priorResponse = traceOverride?.response || "";
+      const assistantPrompt = joinTraceBlocks(
+        priorPrompt,
+        traceBlock(traceOverride ? "工具後助理 Prompt" : "助理 Prompt", assistantInstructions)
+      );
+      const responsePrefix = priorResponse;
+      const pendingResponse = responsePrefix
+        ? joinTraceBlocks(responsePrefix, traceBlock("模型回覆", "等待模型回應"))
+        : "等待模型回應";
+      const assistantTrace = traceOverride;
+      if (traceOverride) {
+        updateTraceCard(assistantTrace, {
+          status: "等待模型回應",
+          prompt: assistantPrompt,
+          response: pendingResponse,
+        });
+      }
+      if (assistantTrace) {
+        assistantTrace.prompt = assistantPrompt;
+        assistantTrace.responsePrefix = responsePrefix;
+      }
+      state.pendingAssistantTrace = assistantTrace;
+      sendRealtimeEvent({
+        type: "response.create",
+        response: {
+          instructions: data.instructions,
+          tool_choice: resolvedToolChoice,
+          output_modalities: ["audio"],
+        },
+      });
+      setStatus("助理回覆中");
+    }
+
+    function handleFunctionCalls(response) {
+      const output = Array.isArray(response?.output) ? response.output : [];
+      const calls = output.filter((item) => item?.type === "function_call");
+      if (!calls.length) return false;
+      const responseTrace = state.pendingAssistantTrace;
+      state.pendingAssistantTrace = null;
+      for (let index = 0; index < calls.length; index += 1) {
+        handleFunctionCall(calls[index], index === 0 ? responseTrace : null);
+      }
+      return true;
+    }
+
+    async function handleFunctionCall(call, existingTrace = null) {
+      const callId = call.call_id || "";
+      const name = call.name || "";
+      const args = parseJsonObject(call.arguments || "{}");
+      if (!callId) return;
+      const trace = existingTrace || addTraceCard(toolLabel(name), "呼叫中", traceContent(args, "等待工具回應"));
+      updateTraceCard(trace, {
+        title: toolLabel(name),
+        status: "呼叫中",
+        prompt: args,
+        response: "等待工具回應",
+      });
+
+      if (name === "medical_qa") {
+        await handleMedicalQaTool(callId, args, trace);
+      } else if (name === "search_web") {
+        await handleWebSearchTool(callId, args, trace);
+      } else {
+        updateTraceCard(trace, {
+          status: "未知工具",
+          prompt: args,
+          response: `Unknown tool: ${name}`,
+        });
+        sendFunctionCallOutput(callId, `Unknown tool: ${name}`);
+        await requestAssistantResponse("default", "none");
+      }
+    }
+
+    async function handleMedicalQaTool(callId, args, trace) {
+      const query = (args.query || getLatestUserTranscript() || "").trim();
+      try {
+        const data = await fetchJson(apiPath("/api/realtime-medical-qa"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+        const outputPayload = {
+          status: data.status || "ok",
+          query,
+          matches: data.matches || [],
+          error: data.message || undefined,
+        };
+        const toolOutput = JSON.stringify(outputPayload, null, 2);
+        updateTraceCard(trace, {
+          status: `${data.status || "完成"}，已取得工具結果`,
+          prompt: query,
+          response: toolOutput,
+        });
+        sendFunctionCallOutput(callId, JSON.stringify(outputPayload));
+        const kind = data.status === "ok" ? "medical_qa_assistant" : "medical_qa_fallback";
+        await requestAssistantResponse(kind, "none", trace, `工具輸出：\n${toolOutput}`);
+      } catch (error) {
+        const outputPayload = {
+          status: "medical_qa_failed",
+          query,
+          error: error.message,
+        };
+        const toolOutput = JSON.stringify(outputPayload, null, 2);
+        sendFunctionCallOutput(callId, JSON.stringify(outputPayload));
+        updateTraceCard(trace, {
+          status: "失敗，已記錄工具結果",
+          prompt: query,
+          response: toolOutput,
+        });
+        await requestAssistantResponse("medical_qa_fallback", "none", trace, `工具輸出：\n${toolOutput}`);
+      }
+    }
+
+    async function handleWebSearchTool(callId, args, trace) {
+      const query = (args.query || getLatestUserTranscript() || "").trim();
+      try {
+        const data = await fetchJson(apiPath("/api/realtime-web-search"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            recent_messages: state.emotionHistory,
+          }),
+        });
+        const outputPayload = {
+          status: data.status || "ok",
+          query,
+          web_context: data.web_context || "",
+          error: data.message || undefined,
+        };
+        const toolOutput = JSON.stringify(outputPayload, null, 2);
+        updateTraceCard(trace, {
+          status: `${data.status || "完成"}，已取得工具結果`,
+          prompt: data.prompt || query,
+          response: toolOutput,
+        });
+        sendFunctionCallOutput(callId, JSON.stringify(outputPayload));
+        const kind = data.web_context ? "web_search_assistant" : "web_search_fallback";
+        await requestAssistantResponse(kind, "none", trace, `工具輸出：\n${toolOutput}`);
+      } catch (error) {
+        const outputPayload = {
+          status: "search_failed",
+          query,
+          error: error.message,
+        };
+        const toolOutput = JSON.stringify(outputPayload, null, 2);
+        sendFunctionCallOutput(callId, JSON.stringify(outputPayload));
+        updateTraceCard(trace, {
+          status: "失敗，已記錄工具結果",
+          prompt: query,
+          response: toolOutput,
+        });
+        await requestAssistantResponse("web_search_fallback", "none", trace, `工具輸出：\n${toolOutput}`);
+      }
+    }
+
+    function sendFunctionCallOutput(callId, output) {
+      sendRealtimeEvent({
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: callId,
+          output: output || "",
+        },
+      });
+    }
+
+    function sendRealtimeEvent(payload) {
+      if (state.dc && state.dc.readyState === "open") {
+        state.dc.send(JSON.stringify(payload));
+      }
+    }
+
+    function markSessionReady() {
+      setSessionPhase(SESSION_PHASE.LIVE);
+    }
+
+    async function stopAndUpload(endReason) {
+      if (state.stopping || state.sessionPhase !== SESSION_PHASE.LIVE) return;
+      state.stopping = true;
+      setSessionPhase(SESSION_PHASE.UPLOADING);
+      clearIdleAutoEndTimer();
+      state.sessionGeneration++;
+      state.responseRequestGeneration++;
+      setStatus("上傳中");
+      setNotice("正在整理錄音、錄影與逐字稿...");
+
+      try {
+        const archive = await cleanupSession(true, endReason);
+        await uploadArchive(archive);
+        state.stopping = false;
+        setSessionPhase(SESSION_PHASE.ENDED);
+        setStatus("已上傳");
+        setNotice("上傳完成。現在可以開始下一段對話。");
+      } catch (error) {
+        state.stopping = false;
+        setSessionPhase(SESSION_PHASE.ENDED);
+        setStatus("上傳失敗");
+        setNotice(`上傳失敗：${error.message}。這段對話已在本機整理完成，請檢查伺服器後開始下一段對話。`);
+      }
+    }
+
+    async function cleanupSession(buildArchive, endReason = "user_stop") {
+      state.sessionReady = false;
+      clearIdleAutoEndTimer();
+
+      if (state.dc) {
+        try { state.dc.close(); } catch {}
+        state.dc = null;
+      }
+      if (state.pc) {
+        try { state.pc.close(); } catch {}
+        state.pc = null;
+      }
+
+      if (state.localStream) {
+        state.localStream.getTracks().forEach((track) => track.stop());
+        state.localStream = null;
+      }
+      if (state.remoteStream) {
+        state.remoteStream.getTracks().forEach((track) => track.stop());
+        state.remoteStream = null;
+      }
+      els.localVideo.srcObject = null;
+      els.remoteAudio.srcObject = null;
+      setMicrophoneButtonEnabled(false);
+      setMicrophoneMuted(false);
+
+      if (!buildArchive) return null;
+
+      syncPendingFeedbackFromEditors();
+      const endedAtMs = Date.now();
+      const metadata = {
+        session_hash: state.sessionHash,
+        started_at_ms: state.startedAtMs,
+        ended_at_ms: endedAtMs,
+        started_at_iso: new Date(state.startedAtMs).toISOString(),
+        ended_at_iso: new Date(endedAtMs).toISOString(),
+        end_reason: endReason,
+        archive_audio_enabled: false,
+        archive_video_enabled: false,
+        user_audio_sample_rate: 0,
+        assistant_audio_sample_rate: 0,
+        transcript_event_count: state.transcriptEvents.length,
+        feedback_count: state.feedbackRecords.length,
+        source: "web_realtime",
+        feedback_file: state.feedbackRecords.length ? "feedback.json" : null,
+        video_frames_file: null,
+        user_audio_file: null,
+        assistant_audio_file: null,
+      };
+      const transcript = {
+        session_hash: state.sessionHash,
+        events: state.transcriptEvents,
+        plain_text: state.transcriptLines.join("\n"),
+        feedback_records: state.feedbackRecords,
+      };
+      const feedback = {
+        status: "ok",
+        source: "web_realtime_feedback",
+        session_hash: state.sessionHash,
+        updated_at: new Date().toISOString(),
+        feedback_count: state.feedbackRecords.length,
+        feedback_records: state.feedbackRecords,
+      };
+
+      return {
+        metadataBlob: jsonBlob(metadata),
+        transcriptBlob: jsonBlob(transcript),
+        transcriptTextBlob: new Blob([state.transcriptLines.join("\n")], { type: "text/plain;charset=utf-8" }),
+        feedbackBlob: state.feedbackRecords.length ? jsonBlob(feedback) : null,
+      };
+    }
+
+    async function uploadArchive(archive) {
+      if (!archive) return;
+      const formData = new FormData();
+      formData.append("session_hash", state.sessionHash);
+      formData.append("metadata_file", archive.metadataBlob, "metadata.json");
+      formData.append("transcript_file", archive.transcriptBlob, "transcript.json");
+      formData.append("transcript_text_file", archive.transcriptTextBlob, "transcript.txt");
+      if (archive.feedbackBlob) {
+        formData.append("feedback_file", archive.feedbackBlob, "feedback.json");
+      }
+
+      const response = await fetch(apiPath("/api/realtime-session"), {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.status === "error") {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+    }
+
+    async function startNextSession() {
+      if (state.stopping || (state.sessionPhase !== SESSION_PHASE.ENDED && state.sessionPhase !== SESSION_PHASE.ERROR)) return;
+      state.sessionGeneration++;
+      state.stopping = true;
+      setSessionPhase(SESSION_PHASE.RESTARTING);
+      clearIdleAutoEndTimer();
+      state.responseRequestGeneration++;
+      setMicrophoneButtonEnabled(false);
+      setStatus("重新啟動中");
+      setNotice("正在開始新的對話...");
+      await cleanupSession(false).catch(() => null);
+      stopVisualizer();
+      state.stopping = false;
+      await startConversation();
+    }
+
+    function setSessionPhase(phase) {
+      state.sessionPhase = phase;
+      state.sessionReady = phase === SESSION_PHASE.LIVE;
+      state.sessionStarting = phase === SESSION_PHASE.STARTING || phase === SESSION_PHASE.RESTARTING;
+      state.uploading = phase === SESSION_PHASE.UPLOADING;
+      state.endButtonUnlocked = phase === SESSION_PHASE.LIVE;
+      state.restartReady = phase === SESSION_PHASE.ENDED || phase === SESSION_PHASE.ERROR;
+      const controlsDisabled = state.sessionStarting || state.uploading;
+      setAllButtonsDisabled(controlsDisabled);
+      switch (phase) {
+        case SESSION_PHASE.LIVE:
+          endButtonController.showEnd();
+          break;
+        case SESSION_PHASE.ENDED:
+          endButtonController.showRestart("開始新對話");
+          break;
+        case SESSION_PHASE.ERROR:
+          endButtonController.showRestart("重新連線");
+          break;
+        case SESSION_PHASE.UPLOADING:
+          endButtonController.showBusy("上傳中");
+          break;
+        case SESSION_PHASE.STARTING:
+        case SESSION_PHASE.RESTARTING:
+          endButtonController.showBusy("啟動中");
+          break;
+        case SESSION_PHASE.SELECTING:
+        default:
+          endButtonController.showIdle();
+      }
+      setMicrophoneButtonEnabled(phase === SESSION_PHASE.LIVE && Boolean(state.localStream));
+    }
+
+    function setAllButtonsDisabled(disabled) {
+      for (const button of document.querySelectorAll("button")) {
+        button.disabled = disabled;
+      }
+      document.body.classList.toggle("controls-disabled", disabled);
+      document.body.toggleAttribute("aria-busy", disabled);
+    }
+
+    function createEndButtonController(button, actions) {
+      let action = "none";
+
+      function render(mode, title, interactive) {
+        const isRestart = mode === "restart";
+        button.className = `call-btn ${isRestart ? "restart-btn" : "end-btn"}`;
+        button.disabled = !interactive;
+        button.title = title;
+        button.setAttribute("aria-label", title);
+        button.innerHTML = isRestart ? RESTART_SESSION_ICON : END_SESSION_ICON;
+      }
+
+      return {
+        showIdle() {
+          action = "none";
+          render("end", "結束對話", false);
+        },
+        showBusy(title) {
+          action = "none";
+          render("end", title, false);
+        },
+        showEnd() {
+          action = "end";
+          render("end", "結束對話", true);
+        },
+        showRestart(title) {
+          action = "restart";
+          render("restart", title, true);
+        },
+        handleClick() {
+          if (action === "end") {
+            actions.onEnd();
+            return;
+          }
+          if (action === "restart") {
+            actions.onRestart();
+          }
+        },
+      };
+    }
+
+    function toggleMicrophoneMute() {
+      if (!state.localStream || state.stopping || state.restartReady) return;
+      setMicrophoneMuted(!state.microphoneMuted);
+    }
+
+    function setMicrophoneMuted(muted) {
+      state.microphoneMuted = muted;
+      if (state.localStream) {
+        for (const track of state.localStream.getAudioTracks()) {
+          track.enabled = !muted;
+        }
+      }
+      els.muteMicButton.classList.toggle("muted", muted);
+      els.muteMicButton.title = muted ? "開啟麥克風" : "關閉麥克風";
+      els.muteMicButton.setAttribute("aria-label", els.muteMicButton.title);
+      els.muteMicButton.setAttribute("aria-pressed", String(muted));
+    }
+
+    function setMicrophoneButtonEnabled(enabled) {
+      const disabled = !enabled || state.sessionStarting || state.uploading;
+      els.muteMicButton.disabled = disabled;
+      els.muteMicButton.toggleAttribute("disabled", disabled);
+    }
+
+    function updateModeUi() {
+      if (els.modeText) {
+        els.modeText.textContent = conversationModeLabel(state.currentConversationMode) || "-";
+      }
+      if (els.negativeText) {
+        els.negativeText.textContent = `${state.consecutiveNegativeEmotionTurns} / 6`;
+      }
+    }
+
+    function getLatestUserTranscript() {
+      for (let index = state.emotionHistory.length - 1; index >= 0; index -= 1) {
+        const item = state.emotionHistory[index];
+        if (item.role === "user") return item.text;
+      }
+      return "";
+    }
+
+    function setStatus(text) {
+      const statusLabel = els.callStatusLabel;
+      if (!statusLabel) return;
+
+      const spinnerIcon = `<svg class="status-icon status-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; animation: status-rotate 1s linear infinite; display: block;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>`;
+      const greenDotIcon = `<svg class="status-icon status-dot" viewBox="0 0 24 24" fill="currentColor" style="width: 8px; height: 8px; animation: status-pulse 1.5s ease-in-out infinite; color: #34c759; display: block;"><circle cx="12" cy="12" r="10"></circle></svg>`;
+      const redDotIcon = `<svg class="status-icon status-dot" viewBox="0 0 24 24" fill="currentColor" style="width: 8px; height: 8px; animation: status-pulse 1.5s ease-in-out infinite; color: #ff3b30; display: block;"><circle cx="12" cy="12" r="10"></circle></svg>`;
+      const soundwaveIcon = `<span class="status-wave-bars" aria-hidden="true"><span class="bar1"></span><span class="bar2"></span><span class="bar3"></span></span>`;
+      const speakerIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="#5856d6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; display: block;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" style="animation: status-pulse 1.2s ease-in-out infinite; transform-origin: center;"></path></svg>`;
+      const sparkleIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="currentColor" style="width: 13px; height: 13px; color: #ff9500; animation: status-pulse 1.2s ease-in-out infinite; display: block;"><path d="M12 2l2.4 6.6 6.6 2.4-6.6 2.4-2.4 6.6-2.4-6.6-6.6-2.4 6.6-2.4z"></path></svg>`;
+      const cloudUploadIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="#007aff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; display: block;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" style="animation: status-bounce-y 1s ease-in-out infinite; display: block;"></path></svg>`;
+      const checkIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="#34c759" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px; display: block;"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+      const crossIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px; display: block;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+
+      const map = {
+        "啟動中": { text: "啟動中", icon: spinnerIcon },
+        "重新啟動中": { text: "啟動中", icon: spinnerIcon },
+        "連線中": { text: "連線中", icon: spinnerIcon },
+        "已連線": { text: "已連線", icon: greenDotIcon },
+        "未連線": { text: "未連線", icon: redDotIcon },
+        "斷線": { text: "斷線", icon: redDotIcon },
+        "出錯": { text: "連線出錯", icon: crossIcon },
+        "錯誤": { text: "連線出錯", icon: crossIcon },
+        "助理回覆中": { text: "助理說話中", icon: speakerIcon },
+        "使用者說話中": { text: "聆聽中", icon: soundwaveIcon },
+        "說話中": { text: "聆聽中", icon: soundwaveIcon },
+        "聆聽中": { text: "聆聽中", icon: soundwaveIcon },
+        "正在思考": { text: "思考中", icon: sparkleIcon },
+        "思考中": { text: "思考中", icon: sparkleIcon },
+        "判斷中": { text: "思考中", icon: sparkleIcon },
+        "情緒判斷中": { text: "思考中", icon: sparkleIcon },
+        "評估中": { text: "思考中", icon: sparkleIcon },
+        "上傳中": { text: "上傳中", icon: cloudUploadIcon },
+        "已上傳": { text: "已上傳", icon: checkIcon },
+        "上傳失敗": { text: "上傳失敗", icon: crossIcon }
+      };
+
+      const matched = map[text] || { text: text, icon: greenDotIcon };
+      if (els.statusPill) {
+        els.statusPill.innerHTML = `${matched.icon}<span>${matched.text}</span>`;
+        els.statusPill.style.opacity = "1";
+        els.statusPill.style.visibility = "visible";
+      }
+      statusLabel.innerHTML = `${matched.icon}<span>${matched.text}</span>`;
+
+      if (!text || text === "未連線" || text === "斷線") {
+        statusLabel.style.opacity = "0";
+        statusLabel.style.visibility = "hidden";
+      } else {
+        statusLabel.style.opacity = "1";
+        statusLabel.style.visibility = "visible";
+      }
+    }
+
+    function setNotice(text) {
+      if (els.sessionNotice) els.sessionNotice.textContent = text;
+    }
+
+    function setSessionStatus(text) {
+      els.sessionStatus.textContent = text;
+    }
+
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.status === "error") {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+      return data;
+    }
+
+    function inferPathPrefix() {
+      const path = window.location.pathname || "";
+      const trimmedPath = path.replace(/\/+$/, "");
+      if (!trimmedPath) return "";
+
+      const realtimeMarker = "/realtime";
+      const realtimeIndex = trimmedPath.lastIndexOf(realtimeMarker);
+      if (realtimeIndex > 0 && realtimeIndex + realtimeMarker.length === trimmedPath.length) {
+        return trimmedPath.slice(0, realtimeIndex);
+      }
+      if (trimmedPath === realtimeMarker) {
+        return "";
+      }
+
+      return trimmedPath === "/" ? "" : trimmedPath;
+    }
+
+    function apiPath(path) {
+      return `${API_BASE}${path}`;
+    }
+
+    function jsonBlob(value) {
+      return new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" });
+    }
+
+    function parseJsonObject(value) {
+      try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatDate(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString("zh-TW", { hour12: false });
+    }
+
+    /* ===== Visualizer Orb ===== */
+    let vizAnimFrame = null;
+    let vizAudioCtx = null;
+    let vizUserAnalyser = null;
+    let vizRemoteAnalyser = null;
+    let vizUserData = null;
+    let vizRemoteData = null;
+
+    function updateAssistantAudioGlow(level = 0, active = false) {
+      if (!els.assistantAudioGlow) return;
+      const normalized = Math.max(0, Math.min(1, level));
+      els.assistantAudioGlow.style.setProperty("--glow-level", normalized.toFixed(3));
+      els.assistantAudioGlow.style.setProperty("--glow-scale", (0.92 + normalized * 0.16).toFixed(3));
+      els.assistantAudioGlow.classList.toggle("is-active", active || normalized > 0.015);
+    }
+
+    function startVisualizer() {
+      stopVisualizer();
+
+      // Try to set up audio analysers
+      try {
+        vizAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) { /* ignore */ }
+
+      // Connect analysers when streams become available
+      const tryConnectAnalysers = () => {
+        if (vizAudioCtx && state.localStream && !vizUserAnalyser) {
+          try {
+            const src = vizAudioCtx.createMediaStreamSource(state.localStream);
+            vizUserAnalyser = vizAudioCtx.createAnalyser();
+            vizUserAnalyser.fftSize = 1024;
+            vizUserAnalyser.smoothingTimeConstant = 0.86;
+            src.connect(vizUserAnalyser);
+            vizUserData = new Uint8Array(vizUserAnalyser.fftSize);
+          } catch (e) { /* ignore */ }
+        }
+        if (vizAudioCtx && state.remoteStream && !vizRemoteAnalyser) {
+          try {
+            const src = vizAudioCtx.createMediaStreamSource(state.remoteStream);
+            vizRemoteAnalyser = vizAudioCtx.createAnalyser();
+            vizRemoteAnalyser.fftSize = 1024;
+            vizRemoteAnalyser.smoothingTimeConstant = 0.88;
+            src.connect(vizRemoteAnalyser);
+            vizRemoteData = new Uint8Array(vizRemoteAnalyser.fftSize);
+          } catch (e) { /* ignore */ }
+        }
+      };
+
+      function getVolume(analyser, dataArray) {
+        if (!analyser || !dataArray) return 0;
+        analyser.getByteTimeDomainData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i += 1) {
+          const centered = (dataArray[i] - 128) / 128;
+          sum += centered * centered;
+        }
+        return Math.min(1, Math.sqrt(sum / dataArray.length) * 2.6);
+      }
+
+      let assistantGlowSmoothed = 0;
+      function draw() {
+        tryConnectAnalysers();
+        const userVol = getVolume(vizUserAnalyser, vizUserData);
+        const remoteVol = getVolume(vizRemoteAnalyser, vizRemoteData);
+        const vol = Math.max(userVol * 0.8, remoteVol * 1.5);
+        const assistantGlowTarget = Math.min(1, 0.05 + remoteVol * 8.4);
+        const glowEase = assistantGlowTarget > assistantGlowSmoothed ? 0.2 : 0.08;
+        assistantGlowSmoothed += (assistantGlowTarget - assistantGlowSmoothed) * glowEase;
+        updateAssistantAudioGlow(assistantGlowSmoothed, true);
+
+        // Update stop button pulsing dots with sound volume
+        const dotEls = document.querySelectorAll('#endSessionButton .pill-dots i');
+        if (dotEls.length === 3) {
+          dotEls[0].style.height = `${4 + vol * 16}px`;
+          dotEls[1].style.height = `${4 + vol * 24}px`;
+          dotEls[2].style.height = `${4 + vol * 16}px`;
+        }
+
+        vizAnimFrame = requestAnimationFrame(draw);
+      }
+
+      vizAnimFrame = requestAnimationFrame(draw);
+    }
+
+    function stopVisualizer() {
+      if (vizAnimFrame) {
+        cancelAnimationFrame(vizAnimFrame);
+        vizAnimFrame = null;
+      }
+      vizUserAnalyser = null;
+      vizRemoteAnalyser = null;
+      vizUserData = null;
+      vizRemoteData = null;
+      updateAssistantAudioGlow(0, false);
+      if (vizAudioCtx) {
+        vizAudioCtx.close().catch(() => {});
+        vizAudioCtx = null;
+      }
+    }
+
+  </script>
+</body>
+</html>
