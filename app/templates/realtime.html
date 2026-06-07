@@ -190,8 +190,11 @@
     .status-pill {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
+      min-width: 104px;
       min-height: 34px;
+      box-sizing: border-box;
       padding: 0 15px;
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.92);
@@ -1383,7 +1386,8 @@
     const REALTIME_MODE_LISTENING = "listening";
     const REALTIME_MODE_GUIDANCE = "guidance";
     const EMOTION_CONTEXT_TURN_COUNT = 3;
-    const INITIAL_NEUTRAL_TURN_COUNT = 3;
+    const INITIAL_UNCLASSIFIED_TURN_COUNT = 3;
+    const STATUS_LISTENING_SETTLE_MS = 400;
     const API_BASE = SCRIPT_ROOT || inferPathPrefix();
     const END_SESSION_ICON = '<span class="pill-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>結束</span>';
     const RESTART_SESSION_ICON = '<svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M20 6v5h-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 18v-5h5"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.2 9A7 7 0 0 0 6.3 6.4L4 8.7"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.8 15a7 7 0 0 0 11.9 2.6L20 15.3"/></svg><span>重新開始</span>';
@@ -1476,6 +1480,8 @@
       currentMemoryContext: "",
       currentMemoryResolved: false,
       currentMemoryStatus: "",
+      statusVisualKey: "",
+      statusListeningTimer: null,
     };
 
     const endButtonController = createEndButtonController(els.endSessionButton, {
@@ -1631,7 +1637,6 @@
       updateViewportHeightVar();
       els.selectedUserLabel.textContent = `${user.name || "未命名使用者"} · session_hash ${state.sessionHash}`;
       els.callUserLabel.textContent = user.name || "未命名使用者";
-      els.callStatusLabel.textContent = "連線中...";
       if (els.sessionHashText) els.sessionHashText.textContent = state.sessionHash;
       els.transcriptLog.innerHTML = "";
       closeTraceDetail();
@@ -1650,11 +1655,10 @@
         await startRealtimePeerConnection(sessionGeneration);
         if (sessionGeneration !== state.sessionGeneration) return;
         markSessionReady();
-        els.callStatusLabel.textContent = "已連線";
+        setStatus("已連線");
         setNotice("已連線，請開始說話。");
       } catch (error) {
         setNotice(`啟動失敗：${error.message}`);
-        els.callStatusLabel.textContent = "啟動失敗";
         await cleanupSession(false);
         setSessionPhase(SESSION_PHASE.ERROR);
         setMicrophoneButtonEnabled(false);
@@ -1791,7 +1795,9 @@
         case "session.created":
         case "session.updated":
           markSessionReady();
-          setStatus("已連線");
+          if (!["listening", "thinking", "assistant-speaking"].includes(state.statusVisualKey)) {
+            setStatus("已連線");
+          }
           break;
         case "response.created":
           state.currentResponseId = event.response?.id || "";
@@ -1804,6 +1810,7 @@
           if (state.currentResponseId) {
             sendRealtimeEvent({ type: "response.cancel", response_id: state.currentResponseId });
           }
+          state.currentResponseId = "";
           setStatus("使用者說話中");
           break;
         case "input_audio_buffer.speech_stopped":
@@ -1838,9 +1845,15 @@
           completeAssistantTranscript(event.item_id || "", event.text || "");
           break;
         case "response.done":
+          if (
+            event.response?.id
+            && (!state.currentResponseId || event.response.id !== state.currentResponseId)
+          ) {
+            break;
+          }
           if (!handleFunctionCalls(event.response)) {
             state.currentResponseId = "";
-            setStatus("聆聽中");
+            scheduleListeningStatus();
           }
           break;
         case "error":
@@ -1868,7 +1881,8 @@
       const text = await convertTranscriptToTraditional(rawText);
       state.userTranscriptBuffer = text;
       if (!text) return;
-      recordTranscript("user", itemId, text);
+      const transcriptItem = recordTranscript("user", itemId, text);
+      if (!transcriptItem) return;
       appendEmotionHistory("user", text);
       state.userTurnCount += 1;
       state.currentMemoryContext = "";
@@ -1894,7 +1908,8 @@
       const text = await convertTranscriptToTraditional(rawText);
       state.assistantTranscriptBuffer = text;
       if (!text) return;
-      recordTranscript("assistant", itemId, text);
+      const transcriptItem = recordTranscript("assistant", itemId, text);
+      if (!transcriptItem) return;
       appendEmotionHistory("assistant", text);
       if (state.pendingAssistantTrace) {
         const response = state.pendingAssistantTrace.responsePrefix
@@ -1912,8 +1927,10 @@
     function recordTranscript(speaker, itemId, text) {
       const normalizedText = (text || "").trim();
       if (!normalizedText) return;
-      const key = `${speaker}:${itemId}:${normalizedText}`;
-      if (state.transcriptDedupe.has(key)) return;
+      const key = itemId
+        ? `${speaker}:item:${itemId}`
+        : `${speaker}:text:${normalizedText}`;
+      if (state.transcriptDedupe.has(key)) return null;
       state.transcriptDedupe.add(key);
 
       const item = {
@@ -1925,6 +1942,7 @@
       state.transcriptEvents.push(item);
       state.transcriptLines.push(`${speaker === "user" ? "USER" : "ASSISTANT"}: ${normalizedText}`);
       addTranscriptLine(speaker, normalizedText);
+      return item;
     }
 
     function addTranscriptLine(speaker, text) {
@@ -2096,25 +2114,30 @@
     async function requestEmotionThenAssistantResponse() {
       const requestId = ++state.responseRequestGeneration;
       state.pendingEmotionDetail = null;
-      if (state.userTurnCount <= INITIAL_NEUTRAL_TURN_COUNT) {
+      const memoryPromise = requestCurrentMemory(requestId);
+      if (state.userTurnCount <= INITIAL_UNCLASSIFIED_TURN_COUNT) {
         state.currentConversationMode = "";
         state.consecutiveNegativeEmotionTurns = 0;
         updateModeUi();
+        await memoryPromise;
+        if (requestId !== state.responseRequestGeneration || state.stopping) return;
         await requestAssistantResponse("default", "auto");
         return;
       }
-      setStatus("情緒判斷中");
-      try {
-        const data = await fetchJson(apiPath("/api/realtime-emotion"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            session_hash: state.sessionHash,
-            messages: state.emotionHistory,
-            phq8: state.selectedUser?.phq8 || null,
-          }),
-        });
-        if (requestId !== state.responseRequestGeneration || state.stopping) return;
+      setStatus("情緒判斷與記憶搜尋中");
+      const emotionPromise = fetchJson(apiPath("/api/realtime-emotion"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_hash: state.sessionHash,
+          messages: state.emotionHistory,
+          phq8: state.selectedUser?.phq8 || null,
+        }),
+      });
+      const [emotionResult] = await Promise.allSettled([emotionPromise, memoryPromise]);
+      if (requestId !== state.responseRequestGeneration || state.stopping) return;
+      if (emotionResult.status === "fulfilled") {
+        const data = emotionResult.value;
         const emotion = ["positive", "neutral", "negative"].includes(data.emotion)
           ? data.emotion
           : "neutral";
@@ -2144,8 +2167,8 @@
         );
         state.pendingEmotionDetail = null;
         updateModeUi();
-      } catch (error) {
-        if (requestId !== state.responseRequestGeneration || state.stopping) return;
+      } else {
+        const error = emotionResult.reason;
         state.currentConversationMode = REALTIME_MODE_LISTENING;
         state.pendingEmotionDetail = {
           label: "失敗，使用傾聽模式",
@@ -2163,6 +2186,41 @@
         updateModeUi();
       }
       await requestAssistantResponse("default", "auto");
+    }
+
+    async function requestCurrentMemory(requestId) {
+      if (state.currentMemoryResolved) {
+        return {
+          memory_context: state.currentMemoryContext,
+          memory_status: state.currentMemoryStatus,
+        };
+      }
+      try {
+        const data = await fetchJson(apiPath("/api/realtime-memory-recall"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_hash: state.sessionHash,
+            user_transcript: getLatestUserTranscript(),
+          }),
+        });
+        if (requestId !== state.responseRequestGeneration || state.stopping) return null;
+        state.currentMemoryContext = data.memory_context || "";
+        state.currentMemoryStatus = data.memory_status || "";
+        state.currentMemoryResolved = true;
+        return data;
+      } catch (error) {
+        if (requestId !== state.responseRequestGeneration || state.stopping) return null;
+        state.currentMemoryContext = "";
+        state.currentMemoryStatus = "error";
+        state.currentMemoryResolved = true;
+        setNotice(`記憶搜尋失敗，本輪繼續回應：${error.message}`);
+        return {
+          memory_context: "",
+          memory_status: "error",
+          memory_error: error.message,
+        };
+      }
     }
 
     async function requestAssistantResponse(kind, toolChoice, traceOverride = null, promptSuffix = "") {
@@ -2220,7 +2278,7 @@
           output_modalities: ["audio"],
         },
       });
-      setStatus("助理回覆中");
+      setStatus("正在思考");
     }
 
     function handleFunctionCalls(response) {
@@ -2714,9 +2772,55 @@
       return "";
     }
 
-    function setStatus(text) {
+    function statusVisualKey(text) {
+      if (["啟動中", "重新啟動中"].includes(text)) return "starting";
+      if (text === "連線中") return "connecting";
+      if (text === "已連線") return "connected";
+      if (text === "未連線") return "offline";
+      if (text === "斷線") return "disconnected";
+      if (["出錯", "錯誤"].includes(text)) return "error";
+      if (text === "上傳失敗") return "upload-error";
+      if (text === "助理回覆中") return "assistant-speaking";
+      if (["使用者說話中", "說話中", "聆聽中"].includes(text)) return "listening";
+      if (["正在思考", "思考中", "判斷中", "情緒判斷中", "情緒判斷與記憶搜尋中", "評估中"].includes(text)) {
+        return "thinking";
+      }
+      if (text === "上傳中") return "uploading";
+      if (text === "已上傳") return "uploaded";
+      return text || "empty";
+    }
+
+    function clearStatusListeningTimer() {
+      if (!state.statusListeningTimer) return;
+      window.clearTimeout(state.statusListeningTimer);
+      state.statusListeningTimer = null;
+    }
+
+    function scheduleListeningStatus() {
+      clearStatusListeningTimer();
+      const sessionGeneration = state.sessionGeneration;
+      const responseGeneration = state.responseRequestGeneration;
+      state.statusListeningTimer = window.setTimeout(() => {
+        state.statusListeningTimer = null;
+        if (
+          sessionGeneration !== state.sessionGeneration
+          || responseGeneration !== state.responseRequestGeneration
+          || state.stopping
+        ) {
+          return;
+        }
+        setStatus("聆聽中");
+      }, STATUS_LISTENING_SETTLE_MS);
+    }
+
+    function setStatus(text, { force = false } = {}) {
       const statusLabel = els.callStatusLabel;
       if (!statusLabel) return;
+      clearStatusListeningTimer();
+
+      const visualKey = statusVisualKey(text);
+      if (!force && state.statusVisualKey === visualKey) return;
+      state.statusVisualKey = visualKey;
 
       const spinnerIcon = `<svg class="status-icon status-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; animation: status-rotate 1s linear infinite; display: block;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>`;
       const greenDotIcon = `<svg class="status-icon status-dot" viewBox="0 0 24 24" fill="currentColor" style="width: 8px; height: 8px; animation: status-pulse 1.5s ease-in-out infinite; color: #34c759; display: block;"><circle cx="12" cy="12" r="10"></circle></svg>`;
@@ -2745,6 +2849,7 @@
         "思考中": { text: "思考中", icon: sparkleIcon },
         "判斷中": { text: "思考中", icon: sparkleIcon },
         "情緒判斷中": { text: "思考中", icon: sparkleIcon },
+        "情緒判斷與記憶搜尋中": { text: "思考中", icon: sparkleIcon },
         "評估中": { text: "思考中", icon: sparkleIcon },
         "上傳中": { text: "上傳中", icon: cloudUploadIcon },
         "已上傳": { text: "已上傳", icon: checkIcon },

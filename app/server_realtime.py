@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import time
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
@@ -244,12 +245,12 @@ def get_hindsight_recall_timeout_seconds() -> int:
     configured = env_config_value(
         "HINDSIGHT_RECALL_TIMEOUT_SECONDS",
         "HINDSIGHT_TIMEOUT_SECONDS",
-        default="5",
+        default="10",
     )
     try:
         return max(1, int(str(configured).strip()))
     except Exception:
-        return 5
+        return 10
 
 
 def post_hindsight_json(api_path: str, payload: dict, timeout: int = 5) -> dict:
@@ -1072,7 +1073,12 @@ def realtime_response_instructions():
     try:
         payload = request.get_json(force=True, silent=True) or {}
         kind = payload.get("kind") or "default"
-        conversation_mode = payload.get("conversation_mode") or REALTIME_MODE_LISTENING
+        raw_conversation_mode = payload.get("conversation_mode")
+        conversation_mode = (
+            REALTIME_MODE_LISTENING
+            if raw_conversation_mode is None
+            else normalize_realtime_conversation_mode(raw_conversation_mode, allow_empty=True)
+        )
         user_transcript = payload.get("user_transcript") or ""
         session_hash = sanitize_session_hash(payload.get("session_hash"))
         recall_memory = payload.get("recall_memory", True)
@@ -1111,6 +1117,42 @@ def realtime_response_instructions():
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/realtime-memory-recall")
+def realtime_memory_recall():
+    started_at = time.monotonic()
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        session_hash = sanitize_session_hash(payload.get("session_hash"))
+        user_transcript = str(payload.get("user_transcript") or "").strip()
+        memory_result = recall_hindsight_memory(session_hash, user_transcript)
+        duration_ms = round((time.monotonic() - started_at) * 1000)
+        print(
+            f"[HINDSIGHT] Recall completed | session={session_hash} "
+            f"| status={memory_result.get('status')} | duration_ms={duration_ms}",
+            flush=True,
+        )
+        return jsonify({
+            "status": "ok",
+            "memory_context": memory_result.get("context") or "",
+            "memory_status": memory_result.get("status") or "",
+            "memory_error": "",
+            "duration_ms": duration_ms,
+        })
+    except Exception as e:
+        duration_ms = round((time.monotonic() - started_at) * 1000)
+        print(
+            f"[HINDSIGHT] Recall failed | duration_ms={duration_ms} | error={e}",
+            flush=True,
+        )
+        return jsonify({
+            "status": "ok",
+            "memory_context": "",
+            "memory_status": "error",
+            "memory_error": str(e),
+            "duration_ms": duration_ms,
+        })
 
 
 @app.post("/api/convert-traditional")

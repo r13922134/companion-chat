@@ -87,7 +87,7 @@ source .venv/bin/activate
 建立本機 `.env`：
 
 ```bash
-cp .env.example .env
+touch .env
 nano .env
 ```
 
@@ -108,13 +108,25 @@ OPENAI_MED_QA_VECTOR_STORE_ID=vs_your_vector_store_id
 ## Step 4：啟動 Hindsight Docker
 
 Compose 會讀取專案根目錄的 `.env`，並將 `OPENAI_API_KEY` 傳入 Hindsight。
+語音延遲優先的預設設定使用 Hindsight 的 `rrf` reranker，保留記憶檢索並避免本機
+cross-encoder 阻塞每一輪。`HINDSIGHT_RECALL_TIMEOUT_SECONDS` 是 Realtime 服務等待
+Hindsight recall 的時間上限，預設 10 秒。若需要調整 recall 或改用本機 reranker，
+可在 `.env` 覆寫：
+
+```dotenv
+HINDSIGHT_RERANKER_PROVIDER=rrf
+HINDSIGHT_RERANKER_MAX_CANDIDATES=50
+HINDSIGHT_RECALL_TIMEOUT_SECONDS=10
+```
 
 ```bash
 sudo docker compose -f docker-compose.hindsight.yml pull
 sudo docker compose -f docker-compose.hindsight.yml up -d
 ```
 
-第一次啟動會下載 Hindsight image、embedding model 與 reranker，可能需要數分鐘。
+第一次啟動會下載 Hindsight image 與 embedding model，可能需要數分鐘。預設 `rrf`
+不需要下載本機 reranker；只有把 `HINDSIGHT_RERANKER_PROVIDER` 改成本機 reranker
+時，才會再下載對應的 reranker model。
 
 檢查狀態：
 

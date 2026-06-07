@@ -1053,7 +1053,12 @@ def realtime_response_instructions():
     try:
         payload = request.get_json(force=True, silent=True) or {}
         kind = payload.get("kind") or "default"
-        conversation_mode = payload.get("conversation_mode") or REALTIME_MODE_LISTENING
+        raw_conversation_mode = payload.get("conversation_mode")
+        conversation_mode = (
+            REALTIME_MODE_LISTENING
+            if raw_conversation_mode is None
+            else normalize_realtime_conversation_mode(raw_conversation_mode, allow_empty=True)
+        )
         user_transcript = payload.get("user_transcript") or ""
         instructions = build_response_instructions(kind, conversation_mode, user_transcript)
         return jsonify({
