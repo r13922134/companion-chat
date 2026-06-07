@@ -253,6 +253,32 @@
       user-select: none;
     }
 
+    .toggle-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      color: var(--text-secondary);
+    }
+
+    .toggle-icon svg {
+      width: 21px;
+      height: 21px;
+      fill: currentColor;
+    }
+
+    .button-icon {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
     .toggle-row input[type="checkbox"] {
       appearance: none;
       -webkit-appearance: none;
@@ -270,6 +296,10 @@
 
     .toggle-row input[type="checkbox"]:checked {
       background-color: var(--green);
+    }
+
+    .toggle-row:has(input[type="checkbox"]:checked) .toggle-icon {
+      color: #248a3d;
     }
 
     .toggle-row input[type="checkbox"]::before {
@@ -296,6 +326,10 @@
     }
 
     #refreshUsersButton {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
       background: #111111;
       color: #ffffff;
       min-height: 32px;
@@ -307,6 +341,14 @@
     #refreshUsersButton:hover:not(:disabled) {
       background: #2b2b2b;
       color: #fff;
+    }
+
+    #refreshUsersButton:disabled .button-icon {
+      animation: refresh-spin 0.9s linear infinite;
+    }
+
+    @keyframes refresh-spin {
+      to { transform: rotate(360deg); }
     }
 
     .notice {
@@ -416,19 +458,29 @@
       color: var(--text-secondary);
     }
 
-    .badge.phq-normal {
-      background: rgba(46, 139, 87, 0.1);
-      color: #1e6e3e;
+    .badge.phq-minimal {
+      background: #eef6f0;
+      color: #3f6f4d;
+    }
+
+    .badge.phq-mild {
+      background: #e4f5e8;
+      color: #24733a;
     }
 
     .badge.phq-moderate {
-      background: rgba(201, 160, 0, 0.1);
-      color: #8a6d00;
+      background: #fff3cc;
+      color: #846200;
+    }
+
+    .badge.phq-moderately-severe {
+      background: #ffe7d1;
+      color: #9a4d00;
     }
 
     .badge.phq-severe {
-      background: rgba(255, 59, 48, 0.1);
-      color: #a03328;
+      background: #fde2e1;
+      color: #a12820;
     }
 
     .badge.phq-unknown {
@@ -1211,17 +1263,35 @@
       <div class="panel toolbar">
         <div class="settings-group" aria-label="存檔設定">
           <label class="toggle-row" title="關閉後仍可語音對話，但不保存或上傳 WAV。">
+            <span class="toggle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 2a4 4 0 0 0-4 4v6a4 4 0 0 0 8 0V6a4 4 0 0 0-4-4Z"></path>
+                <path d="M5 11a1 1 0 1 1 2 0v1a5 5 0 0 0 10 0v-1a1 1 0 1 1 2 0v1a7 7 0 0 1-6 6.92V21h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.08A7 7 0 0 1 5 12v-1Z"></path>
+              </svg>
+            </span>
             <input id="recordAudioToggle" type="checkbox">
             <strong>錄音存檔</strong>
           </label>
           <label class="toggle-row" title="關閉後不開攝影機，也不保存或上傳影格。">
+            <span class="toggle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 5a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3H4Z"></path>
+                <path d="M18 9.25a2 2 0 0 1 .9-1.67l2-1.34A1.35 1.35 0 0 1 23 7.36v9.28a1.35 1.35 0 0 1-2.1 1.12l-2-1.34a2 2 0 0 1-.9-1.67v-5.5Z"></path>
+              </svg>
+            </span>
             <input id="recordVideoToggle" type="checkbox">
             <strong>錄影存檔</strong>
           </label>
         </div>
         <div class="actions-group">
           <span class="notice" id="userStatus">正在讀取使用者清單...</span>
-          <button id="refreshUsersButton" type="button">重新整理</button>
+          <button id="refreshUsersButton" type="button">
+            <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 11a8 8 0 1 0-2.34 5.66"></path>
+              <path d="M20 4v7h-7"></path>
+            </svg>
+            <span>重新整理</span>
+          </button>
         </div>
       </div>
       <div class="panel user-list" id="userList"></div>
@@ -1490,15 +1560,9 @@
         const card = document.createElement("article");
         card.className = "user-card" + (!user.form_hash ? " disabled" : "");
         const name = user.name || "未命名使用者";
-        const phq = user.phq8_score === null || user.phq8_score === undefined ? null : user.phq8_score;
-        const phqText = phq !== null ? `PHQ-8: ${phq}` : "PHQ-8: -";
-
-        let phqClass = "phq-unknown";
-        if (phq !== null) {
-          if (phq >= 15) phqClass = "phq-severe";
-          else if (phq >= 10) phqClass = "phq-moderate";
-          else phqClass = "phq-normal";
-        }
+        const rawPhq = user.phq8_score;
+        const phq = rawPhq === null || rawPhq === undefined || rawPhq === "" ? null : Number(rawPhq);
+        const phqBadge = getPhq8Badge(phq);
 
         const ageText = user.age ? `${user.age} 歲` : "年齡未填";
         const dateStr = formatDate(user.submitted_at || user.received_at || "");
@@ -1511,7 +1575,7 @@
           </div>
           <div class="user-badges">
             <span class="badge age-badge">${escapeHtml(ageText)}</span>
-            <span class="badge ${phqClass}">${escapeHtml(phqText)}</span>
+            <span class="badge ${phqBadge.className}" title="${escapeHtml(phqBadge.title)}">${escapeHtml(phqBadge.text)}</span>
           </div>
           <div class="user-card-footer">
             <span class="user-date">${escapeHtml(dateStr)}</span>
@@ -2297,6 +2361,49 @@
       if (state.dc && state.dc.readyState === "open") {
         state.dc.send(JSON.stringify(payload));
       }
+    }
+
+    function getPhq8Badge(score) {
+      if (!Number.isFinite(score)) {
+        return {
+          className: "phq-unknown",
+          text: "PHQ-8: -",
+          title: "未提供 PHQ-8 分數",
+        };
+      }
+      if (score <= 4) {
+        return {
+          className: "phq-minimal",
+          text: `PHQ-8: ${score}`,
+          title: `PHQ-8 分數：${score}`,
+        };
+      }
+      if (score <= 9) {
+        return {
+          className: "phq-mild",
+          text: `PHQ-8: ${score}`,
+          title: `PHQ-8 分數：${score}`,
+        };
+      }
+      if (score <= 14) {
+        return {
+          className: "phq-moderate",
+          text: `PHQ-8: ${score}`,
+          title: `PHQ-8 分數：${score}`,
+        };
+      }
+      if (score <= 19) {
+        return {
+          className: "phq-moderately-severe",
+          text: `PHQ-8: ${score}`,
+          title: `PHQ-8 分數：${score}`,
+        };
+      }
+      return {
+        className: "phq-severe",
+        text: `PHQ-8: ${score}`,
+        title: `PHQ-8 分數：${score}`,
+      };
     }
 
     function markSessionReady() {

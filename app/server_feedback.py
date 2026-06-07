@@ -321,41 +321,12 @@ def is_medical_qa_enabled() -> bool:
     return bool(get_medical_qa_vector_store_id())
 
 
+def build_default_assistant_instructions(conversation_mode: str) -> str:
+    return build_base_assistant_instructions(conversation_mode)
+
+
 def build_search_enabled_assistant_instructions(conversation_mode: str) -> str:
-    medical_enabled = is_medical_qa_enabled()
-    instructions = build_base_assistant_instructions(conversation_mode)
-    if medical_enabled:
-        instructions = append_medical_qa_policy_instructions(instructions)
-    return append_search_policy_instructions(instructions, medical_enabled)
-
-
-def append_medical_qa_policy_instructions(base_instructions: str) -> str:
-    return (
-        base_instructions.strip()
-        + "\n\n"
-        + "# Medical QA Policy\n"
-        + "- 癌症治療、營養、放療、化療、副作用、照護、長照、衛教類問題，優先呼叫 medical_qa。\n"
-        + "- medical_qa 回傳結果後，只根據 QA 依據回答，可以改寫成自然口語，但不要加入 QA 沒有支撐的醫療細節。\n"
-        + "- 若找不到明確 QA、或問題是個人診斷、個人處方、用藥調整、急症決策，請保守回應，建議使用者詢問醫師、護理師或營養師。\n"
-        + "- 只有問題需要最新、即時、外部或指定來源資訊時，才改用 search_web。"
-    )
-
-
-def append_search_policy_instructions(base_instructions: str, medical_qa_enabled: bool) -> str:
-    builder = [
-        base_instructions.strip(),
-        "",
-        "# Web Search Policy",
-        "- 一般聊天、情緒支持、延續既有對話，直接回答，不要搜尋。",
-    ]
-    if medical_qa_enabled:
-        builder.append("- 醫療衛教問題優先呼叫 medical_qa；不要因為是醫療問題就直接上網搜尋。")
-    builder.extend([
-        "- 只有使用者詢問即時、近期、外部、指定來源，或你不確定且可能已變動的事實時，才呼叫 search_web。",
-        "- 搜尋前把搜尋字串寫成一句清楚的查詢，保留使用者真正想確認的對象、時間與地點。",
-        "- 搜尋完成後，根據工具輸出自然回答；不要說出工具名稱、內部流程或原始提示詞。",
-    ])
-    return "\n".join(builder)
+    return build_default_assistant_instructions(conversation_mode)
 
 
 def build_medical_qa_assistant_instructions(conversation_mode: str, user_transcript: str = "") -> str:
@@ -413,7 +384,7 @@ def build_response_instructions(kind: str, conversation_mode: str, user_transcri
         return build_web_search_assistant_instructions(conversation_mode, user_transcript)
     if kind == "web_search_fallback":
         return build_web_search_fallback_instructions(conversation_mode, user_transcript)
-    return build_search_enabled_assistant_instructions(conversation_mode)
+    return build_default_assistant_instructions(conversation_mode)
 
 
 def build_medical_qa_tool() -> dict:
@@ -438,11 +409,22 @@ def build_medical_qa_tool() -> dict:
     }
 
 
-def build_search_web_tool() -> dict:
+def build_search_web_tool(medical_qa_enabled: bool = True) -> dict:
+    description = (
+        "搜尋網頁以確認即時、近期、外部、指定來源或不確定的事實。"
+        "只有在使用者詢問今天、最新、新聞、天氣、價格、時程、法規、人物現況、產品規格、引用來源，"
+        "或答案可能已過期時才使用。"
+    )
+    if medical_qa_enabled:
+        description += (
+            "一般醫療衛教優先使用 medical_qa；"
+            "只有醫療問題依賴最新、即時或指定外部資料時才使用此工具。"
+        )
+    description += "一般聊天與情緒支持請直接回答。"
     return {
         "type": "function",
         "name": "search_web",
-        "description": "搜尋網頁以確認即時、近期、外部、指定來源或不確定的事實。只有在使用者詢問今天、最新、新聞、天氣、價格、時程、法規、人物現況、產品規格、引用來源，或答案可能已過期時才使用；一般聊天與情緒支持請直接回答。",
+        "description": description,
         "parameters": {
             "type": "object",
             "properties": {
@@ -461,10 +443,11 @@ def build_search_web_tool() -> dict:
 
 
 def build_realtime_tools() -> list[dict]:
+    medical_qa_enabled = is_medical_qa_enabled()
     tools = []
-    if is_medical_qa_enabled():
+    if medical_qa_enabled:
         tools.append(build_medical_qa_tool())
-    tools.append(build_search_web_tool())
+    tools.append(build_search_web_tool(medical_qa_enabled))
     return tools
 
 
@@ -487,7 +470,7 @@ def build_realtime_client_session_config(conversation_mode: str) -> dict:
             },
             "output": {"voice": REALTIME_DEFAULT_VOICE},
         },
-        "instructions": build_search_enabled_assistant_instructions(conversation_mode),
+        "instructions": build_default_assistant_instructions(conversation_mode),
         "output_modalities": ["audio"],
         "tools": build_realtime_tools(),
         "tool_choice": "auto",
