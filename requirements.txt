@@ -3,5 +3,19 @@ openai
 numpy
 pandas
 werkzeug
-torch
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+transformers==4.53.2
+accelerate
+peft
+safetensors
+pyyaml
+scikit-learn
+scipy
+soundfile
+librosa
+tqdm
+Pillow
+pytest
 opencc

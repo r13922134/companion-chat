@@ -1,0 +1,13 @@
+inherits: configs/qwen3_4b_hubert_resnet_stage1.yaml
+dataset:
+  rationale_path:
+training:
+  stage: stage2
+  output_dir: artifacts/checkpoints/qwen3_4b_hubert_resnet_stage2
+  lq_checkpoint: artifacts/checkpoints/qwen3_4b_hubert_resnet_stage1/best/mllm_dr.pt
+model:
+  use_tract_raft: true
+  score_only_response: false
+  score_after_rationale: true
+prediction:
+  score_source: tract

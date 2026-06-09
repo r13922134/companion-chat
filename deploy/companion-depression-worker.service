@@ -1,0 +1,18 @@
+[Unit]
+Description=Companion persistent depression GPU worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/companion/companion-chat
+EnvironmentFile=-%h/companion/companion-chat/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=DEPRESSION_GPU_ID=0
+ExecStart=%h/companion/companion-chat/.venv/bin/python -m app.depression_worker --gpu-id 0
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,79 @@
+seed: 42
+dataset:
+  root: /work/u1347422/datasets/Extended-DaicWoz
+  split: train
+  max_text_length: 8192
+  max_audio_frames: 16384
+  max_video_frames: 8192
+  exclude_participants: [487, 382]
+  transcript_cleanup:
+    enabled: false
+  aspect_retrieval:
+    path:
+    require: false
+features:
+  backend: hubert_resnet
+  cache_dir: artifacts/features/hubert
+  hubert_model_name: facebook/hubert-base-ls960
+  hubert_chunk_seconds: 30
+  participant_only_audio: true
+  max_interval_seconds: 30
+model:
+  base_model_name_or_path: Qwen/Qwen3-4B-Instruct-2507
+  audio_marker: <AudioHere>
+  video_marker: <VideoHere>
+  audio_input_dim: 768
+  video_input_dim: 2048
+  query_tokens: 32
+  query_dim: 768
+  lq_hidden_dim: 1024
+  lq_layers: 4
+  lq_heads: 8
+  lq_dropout: 0.3
+  temporal_pack_segments: 3
+  temporal_pack_tokens_per_segment: 64
+  query_group_sizes:
+    global: 8
+    temporal: 12
+    clinical: 8
+    aspect: 4
+  freeze_lqformer_in_stage2: true
+  use_audio_lqformer: true
+  use_video_lqformer: true
+  use_aspect_conditioning: true
+  chat_template_kwargs:
+    enable_thinking: false
+training:
+  stage: stage1
+  output_dir: artifacts/checkpoints/qwen3_4b_hubert_resnet_stage1
+  epochs: 10
+  batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 0.00001
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  dataloader_num_workers: 6
+  pin_memory: true
+  prefetch_factor: 2
+  bf16: true
+  load_in_4bit: false
+  load_in_8bit: false
+  gradient_checkpointing: true
+  distributed_backend: ddp
+  log_every: 10
+  save_every: 1
+  save_best_only: true
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.1
+  target_modules: [q_proj, v_proj]
+generation:
+  max_new_tokens: 128
+  do_sample: false
+  temperature: 1.0
+  top_k: 0
+  repetition_penalty: 1.05
+  no_repeat_ngram_size: 4
+prediction:
+  score_source: generation

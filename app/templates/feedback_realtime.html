@@ -1145,6 +1145,10 @@
     const INITIAL_UNCLASSIFIED_TURN_COUNT = 3;
     const USER_IDLE_TIMEOUT_MS = 60 * 1000;
     const STATUS_LISTENING_SETTLE_MS = 400;
+    const ASSISTANT_AUDIO_RELEASE_DELAY_MS = 700;
+    const ASSISTANT_AUDIO_LEVEL_THRESHOLD = 0.008;
+    const BARGE_IN_VOICE_THRESHOLD = 0.035;
+    const BARGE_IN_REQUIRED_FRAMES = 8;
     const API_BASE = SCRIPT_ROOT || inferPathPrefix();
     const END_SESSION_ICON = '<span class="pill-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>結束</span>';
     const RESTART_SESSION_ICON = '<svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M20 6v5h-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 18v-5h5"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.2 9A7 7 0 0 0 6.3 6.4L4 8.7"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.8 15a7 7 0 0 0 11.9 2.6L20 15.3"/></svg><span>重新開始</span>';
@@ -1196,8 +1200,14 @@
       pc: null,
       dc: null,
       localStream: null,
+      outboundAudioTrack: null,
       remoteStream: null,
       microphoneMuted: false,
+      assistantAudioActive: false,
+      assistantAudioReleaseTimer: null,
+      bargeInActive: false,
+      bargeInVoiceFrames: 0,
+      assistantEchoFloor: 0,
       sessionPhase: SESSION_PHASE.SELECTING,
       sessionReady: false,
       sessionStarting: false,
@@ -1342,6 +1352,7 @@
       state.assistantTranscriptBuffer = "";
       state.stopping = false;
       state.microphoneMuted = false;
+      setAssistantAudioActive(false, { immediate: true });
       setSessionPhase(SESSION_PHASE.STARTING);
 
       els.selectionView.classList.add("hidden");
@@ -1390,6 +1401,10 @@
       };
       const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
       state.localStream = stream;
+      for (const track of stream.getAudioTracks()) {
+        track.contentHint = "speech";
+      }
+      applyMicrophoneTrackState();
       els.localVideo.srcObject = null;
       els.videoPip.classList.add("pip-hidden");
       if (els.frameCountText) els.frameCountText.textContent = "關閉";
@@ -1424,8 +1439,15 @@
       };
 
       if (sessionGeneration !== state.sessionGeneration || !state.localStream) return;
-      for (const track of state.localStream.getAudioTracks()) {
-        pc.addTrack(track, state.localStream);
+      const sourceAudioTrack = state.localStream.getAudioTracks()[0];
+      if (sourceAudioTrack) {
+        state.outboundAudioTrack = sourceAudioTrack.clone();
+        state.outboundAudioTrack.contentHint = "speech";
+        applyMicrophoneTrackState();
+        pc.addTrack(
+          state.outboundAudioTrack,
+          new MediaStream([state.outboundAudioTrack])
+        );
       }
 
       const dc = pc.createDataChannel("oai-events");
@@ -1489,17 +1511,22 @@
           break;
         case "response.created":
           state.currentResponseId = event.response?.id || "";
+          setAssistantAudioActive(true);
           setStatus("正在思考");
           break;
         case "input_audio_buffer.speech_started":
+          const wasBargeIn = state.bargeInActive;
           clearIdleAutoEndTimer();
           state.responseRequestGeneration++;
           state.currentUserItemId = "";
           state.userTranscriptBuffer = "";
-          if (state.currentResponseId) {
+          if (state.currentResponseId && !wasBargeIn) {
             sendRealtimeEvent({ type: "response.cancel", response_id: state.currentResponseId });
           }
           state.currentResponseId = "";
+          if (wasBargeIn) {
+            setAssistantAudioActive(false, { immediate: true });
+          }
           setStatus("使用者說話中");
           break;
         case "input_audio_buffer.speech_stopped":
@@ -1514,10 +1541,12 @@
           break;
         case "response.audio.delta":
         case "response.output_audio.delta":
+          setAssistantAudioActive(true);
           setStatus("助理回覆中");
           break;
         case "response.audio_transcript.delta":
         case "response.output_audio_transcript.delta":
+          setAssistantAudioActive(true);
           setStatus("助理回覆中");
           appendAssistantTranscript(event.item_id || "", event.delta || "");
           break;
@@ -1526,6 +1555,7 @@
           break;
         case "response.audio.done":
         case "response.output_audio.done":
+          scheduleAssistantAudioRelease();
           break;
         case "response.audio_transcript.done":
         case "response.output_audio_transcript.done":
@@ -1543,10 +1573,12 @@
           }
           if (!handleFunctionCalls(event.response)) {
             state.currentResponseId = "";
+            scheduleAssistantAudioRelease();
             scheduleListeningStatus();
           }
           break;
         case "error":
+          scheduleAssistantAudioRelease();
           setNotice(`Realtime 錯誤：${event.error?.message || "unknown error"}`);
           break;
         default:
@@ -2166,6 +2198,7 @@
     async function cleanupSession(buildArchive, endReason = "user_stop") {
       state.sessionReady = false;
       clearIdleAutoEndTimer();
+      setAssistantAudioActive(false, { immediate: true });
 
       if (state.dc) {
         try { state.dc.close(); } catch {}
@@ -2174,6 +2207,10 @@
       if (state.pc) {
         try { state.pc.close(); } catch {}
         state.pc = null;
+      }
+      if (state.outboundAudioTrack) {
+        state.outboundAudioTrack.stop();
+        state.outboundAudioTrack = null;
       }
 
       if (state.localStream) {
@@ -2361,15 +2398,102 @@
 
     function setMicrophoneMuted(muted) {
       state.microphoneMuted = muted;
-      if (state.localStream) {
-        for (const track of state.localStream.getAudioTracks()) {
-          track.enabled = !muted;
-        }
-      }
+      applyMicrophoneTrackState();
       els.muteMicButton.classList.toggle("muted", muted);
       els.muteMicButton.title = muted ? "開啟麥克風" : "關閉麥克風";
       els.muteMicButton.setAttribute("aria-label", els.muteMicButton.title);
       els.muteMicButton.setAttribute("aria-pressed", String(muted));
+    }
+
+    function applyMicrophoneTrackState() {
+      if (state.localStream) {
+        for (const track of state.localStream.getAudioTracks()) {
+          track.enabled = !state.microphoneMuted;
+        }
+      }
+      if (state.outboundAudioTrack) {
+        state.outboundAudioTrack.enabled = (
+          !state.microphoneMuted
+          && (!state.assistantAudioActive || state.bargeInActive)
+        );
+      }
+    }
+
+    function setAssistantAudioActive(active, { immediate = false } = {}) {
+      if (state.assistantAudioReleaseTimer) {
+        window.clearTimeout(state.assistantAudioReleaseTimer);
+        state.assistantAudioReleaseTimer = null;
+      }
+      if (!active && !immediate) {
+        scheduleAssistantAudioRelease();
+        return;
+      }
+      if (active && !state.assistantAudioActive) {
+        state.bargeInActive = false;
+        state.bargeInVoiceFrames = 0;
+        state.assistantEchoFloor = 0;
+      }
+      if (state.assistantAudioActive === active) return;
+      state.assistantAudioActive = active;
+      if (!active) {
+        state.bargeInActive = false;
+        state.bargeInVoiceFrames = 0;
+        state.assistantEchoFloor = 0;
+      }
+      applyMicrophoneTrackState();
+    }
+
+    function scheduleAssistantAudioRelease(delayMs = ASSISTANT_AUDIO_RELEASE_DELAY_MS) {
+      if (state.assistantAudioReleaseTimer) {
+        window.clearTimeout(state.assistantAudioReleaseTimer);
+      }
+      state.assistantAudioReleaseTimer = window.setTimeout(() => {
+        state.assistantAudioReleaseTimer = null;
+        if (!state.assistantAudioActive) return;
+        state.assistantAudioActive = false;
+        state.bargeInActive = false;
+        state.bargeInVoiceFrames = 0;
+        state.assistantEchoFloor = 0;
+        applyMicrophoneTrackState();
+      }, delayMs);
+    }
+
+    function detectBargeIn(userVolume, remoteVolume) {
+      if (
+        !state.assistantAudioActive
+        || state.bargeInActive
+        || state.microphoneMuted
+        || !state.outboundAudioTrack
+      ) {
+        state.bargeInVoiceFrames = 0;
+        return;
+      }
+
+      const threshold = Math.max(
+        BARGE_IN_VOICE_THRESHOLD,
+        state.assistantEchoFloor * 2.5,
+        remoteVolume * 0.18
+      );
+      if (userVolume >= threshold) {
+        state.bargeInVoiceFrames += 1;
+      } else {
+        state.bargeInVoiceFrames = Math.max(0, state.bargeInVoiceFrames - 1);
+        state.assistantEchoFloor = state.assistantEchoFloor
+          ? state.assistantEchoFloor * 0.92 + userVolume * 0.08
+          : userVolume;
+      }
+      if (state.bargeInVoiceFrames < BARGE_IN_REQUIRED_FRAMES) return;
+
+      state.bargeInActive = true;
+      state.bargeInVoiceFrames = 0;
+      applyMicrophoneTrackState();
+      if (state.currentResponseId) {
+        sendRealtimeEvent({
+          type: "response.cancel",
+          response_id: state.currentResponseId,
+        });
+      }
+      setStatus("使用者說話中");
     }
 
     function setMicrophoneButtonEnabled(enabled) {
@@ -2430,6 +2554,10 @@
           || responseGeneration !== state.responseRequestGeneration
           || state.stopping
         ) {
+          return;
+        }
+        if (state.assistantAudioActive) {
+          scheduleListeningStatus();
           return;
         }
         setStatus("聆聽中");
@@ -2626,6 +2754,11 @@
         tryConnectAnalysers();
         const userVol = getVolume(vizUserAnalyser, vizUserData);
         const remoteVol = getVolume(vizRemoteAnalyser, vizRemoteData);
+        detectBargeIn(userVol, remoteVol);
+        if (remoteVol > ASSISTANT_AUDIO_LEVEL_THRESHOLD) {
+          setAssistantAudioActive(true);
+          scheduleAssistantAudioRelease();
+        }
         const vol = Math.max(userVol * 0.8, remoteVol * 1.5);
         const assistantGlowTarget = Math.min(1, 0.05 + remoteVol * 8.4);
         const glowEase = assistantGlowTarget > assistantGlowSmoothed ? 0.2 : 0.08;

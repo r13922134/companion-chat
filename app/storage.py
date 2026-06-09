@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -96,6 +98,18 @@ def initialize_database(db_path: Path) -> None:
                 memory_operation_id TEXT,
                 memory_error TEXT,
                 memory_queued_at TEXT,
+                depression_status TEXT NOT NULL DEFAULT '',
+                depression_total_score REAL,
+                depression_binary INTEGER,
+                depression_result_json TEXT,
+                depression_error TEXT,
+                depression_completed_at TEXT,
+                depression_queued_at TEXT,
+                depression_started_at TEXT,
+                depression_worker_id TEXT,
+                archive_manifest_json TEXT,
+                ground_truth_total_score REAL,
+                ground_truth_binary INTEGER,
                 UNIQUE(session_hash, run_id)
             );
 
@@ -104,6 +118,48 @@ def initialize_database(db_path: Path) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_realtime_session_runs_uploaded_at
                 ON realtime_session_runs(uploaded_at DESC);
+
+            CREATE TABLE IF NOT EXISTS depression_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_hash TEXT NOT NULL,
+                run_id TEXT NOT NULL,
+                session_dir TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                priority INTEGER NOT NULL DEFAULT 0,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL DEFAULT 3,
+                queued_at TEXT NOT NULL,
+                available_at_epoch REAL NOT NULL,
+                claimed_at TEXT,
+                heartbeat_at TEXT,
+                lease_expires_at_epoch REAL,
+                completed_at TEXT,
+                worker_id TEXT,
+                last_error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(session_hash, run_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_depression_jobs_claim
+                ON depression_jobs(status, available_at_epoch, priority DESC, id);
+
+            CREATE INDEX IF NOT EXISTS idx_depression_jobs_lease
+                ON depression_jobs(status, lease_expires_at_epoch);
+
+            CREATE TABLE IF NOT EXISTS depression_workers (
+                worker_id TEXT PRIMARY KEY,
+                gpu_id TEXT NOT NULL,
+                pid INTEGER NOT NULL,
+                hostname TEXT NOT NULL,
+                status TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                heartbeat_at TEXT NOT NULL,
+                details_json TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_depression_workers_heartbeat
+                ON depression_workers(status, heartbeat_at DESC);
 
             CREATE TABLE IF NOT EXISTS feedback_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -141,6 +197,23 @@ def initialize_database(db_path: Path) -> None:
         ensure_column(connection, "realtime_session_runs", "memory_operation_id", "TEXT")
         ensure_column(connection, "realtime_session_runs", "memory_error", "TEXT")
         ensure_column(connection, "realtime_session_runs", "memory_queued_at", "TEXT")
+        ensure_column(
+            connection,
+            "realtime_session_runs",
+            "depression_status",
+            "TEXT NOT NULL DEFAULT ''",
+        )
+        ensure_column(connection, "realtime_session_runs", "depression_total_score", "REAL")
+        ensure_column(connection, "realtime_session_runs", "depression_binary", "INTEGER")
+        ensure_column(connection, "realtime_session_runs", "depression_result_json", "TEXT")
+        ensure_column(connection, "realtime_session_runs", "depression_error", "TEXT")
+        ensure_column(connection, "realtime_session_runs", "depression_completed_at", "TEXT")
+        ensure_column(connection, "realtime_session_runs", "depression_queued_at", "TEXT")
+        ensure_column(connection, "realtime_session_runs", "depression_started_at", "TEXT")
+        ensure_column(connection, "realtime_session_runs", "depression_worker_id", "TEXT")
+        ensure_column(connection, "realtime_session_runs", "archive_manifest_json", "TEXT")
+        ensure_column(connection, "realtime_session_runs", "ground_truth_total_score", "REAL")
+        ensure_column(connection, "realtime_session_runs", "ground_truth_binary", "INTEGER")
 
 
 def dump_json(value: Any) -> str:
@@ -319,8 +392,11 @@ def upsert_realtime_session_run(db_path: Path, record: dict[str, Any]) -> None:
                 transcript_json,
                 transcript_text,
                 saved_file_names_json,
-                saved_file_paths_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                saved_file_paths_json,
+                archive_manifest_json,
+                ground_truth_total_score,
+                ground_truth_binary
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_hash, run_id) DO UPDATE SET
                 session_dir_name = excluded.session_dir_name,
                 started_at = excluded.started_at,
@@ -331,6 +407,18 @@ def upsert_realtime_session_run(db_path: Path, record: dict[str, Any]) -> None:
                 metadata_json = COALESCE(excluded.metadata_json, realtime_session_runs.metadata_json),
                 transcript_json = COALESCE(excluded.transcript_json, realtime_session_runs.transcript_json),
                 transcript_text = COALESCE(excluded.transcript_text, realtime_session_runs.transcript_text),
+                archive_manifest_json = COALESCE(
+                    excluded.archive_manifest_json,
+                    realtime_session_runs.archive_manifest_json
+                ),
+                ground_truth_total_score = COALESCE(
+                    excluded.ground_truth_total_score,
+                    realtime_session_runs.ground_truth_total_score
+                ),
+                ground_truth_binary = COALESCE(
+                    excluded.ground_truth_binary,
+                    realtime_session_runs.ground_truth_binary
+                ),
                 saved_file_names_json = CASE
                     WHEN excluded.saved_file_names_json IS NOT NULL
                      AND excluded.saved_file_names_json != '[]'
@@ -358,6 +446,17 @@ def upsert_realtime_session_run(db_path: Path, record: dict[str, Any]) -> None:
                 record.get("transcript_text"),
                 dump_json(saved_file_names),
                 dump_json(saved_file_paths),
+                (
+                    dump_json(record.get("archive_manifest"))
+                    if record.get("archive_manifest") is not None
+                    else None
+                ),
+                record.get("ground_truth_total_score"),
+                (
+                    None
+                    if record.get("ground_truth_binary") is None
+                    else int(bool(record.get("ground_truth_binary")))
+                ),
             ),
         )
 
@@ -387,7 +486,19 @@ def get_realtime_session_run(
                 memory_status,
                 memory_operation_id,
                 memory_error,
-                memory_queued_at
+                memory_queued_at,
+                depression_status,
+                depression_total_score,
+                depression_binary,
+                depression_result_json,
+                depression_error,
+                depression_completed_at,
+                depression_queued_at,
+                depression_started_at,
+                depression_worker_id,
+                archive_manifest_json,
+                ground_truth_total_score,
+                ground_truth_binary
             FROM realtime_session_runs
             WHERE session_hash = ? AND run_id = ?
             LIMIT 1
@@ -414,6 +525,24 @@ def get_realtime_session_run(
         "memory_operation_id": row["memory_operation_id"],
         "memory_error": row["memory_error"],
         "memory_queued_at": row["memory_queued_at"],
+        "depression_status": row["depression_status"] or "",
+        "depression_total_score": row["depression_total_score"],
+        "depression_binary": (
+            None if row["depression_binary"] is None else bool(row["depression_binary"])
+        ),
+        "depression_result": load_json(row["depression_result_json"], None),
+        "depression_error": row["depression_error"],
+        "depression_completed_at": row["depression_completed_at"],
+        "depression_queued_at": row["depression_queued_at"],
+        "depression_started_at": row["depression_started_at"],
+        "depression_worker_id": row["depression_worker_id"],
+        "archive_manifest": load_json(row["archive_manifest_json"], None),
+        "ground_truth_total_score": row["ground_truth_total_score"],
+        "ground_truth_binary": (
+            None
+            if row["ground_truth_binary"] is None
+            else bool(row["ground_truth_binary"])
+        ),
     }
 
 
@@ -442,6 +571,582 @@ def update_realtime_session_run_memory(
                 run_id,
             ),
         )
+
+
+def update_realtime_session_run_depression(
+    db_path: Path,
+    session_hash: str,
+    run_id: str,
+    depression_update: dict[str, Any],
+) -> None:
+    result = depression_update.get("result")
+    if result is None:
+        result_json = depression_update.get("result_json")
+    else:
+        result_json = dump_json(result)
+    binary = depression_update.get("binary")
+    if binary is None:
+        binary = depression_update.get("depression_binary")
+
+    with connect_database(db_path) as connection:
+        connection.execute(
+            """
+            UPDATE realtime_session_runs
+            SET depression_status = ?,
+                depression_total_score = ?,
+                depression_binary = ?,
+                depression_result_json = ?,
+                depression_error = ?,
+                depression_completed_at = ?
+            WHERE session_hash = ? AND run_id = ?
+            """,
+            (
+                depression_update.get("status") or "",
+                depression_update.get("total_score"),
+                None if binary is None else int(bool(binary)),
+                result_json,
+                depression_update.get("error") or depression_update.get("message"),
+                depression_update.get("completed_at"),
+                session_hash,
+                run_id,
+            ),
+        )
+
+
+def _now_iso() -> str:
+    return datetime.now().astimezone().isoformat(timespec="milliseconds")
+
+
+def enqueue_depression_job(
+    db_path: Path,
+    session_hash: str,
+    run_id: str,
+    session_dir: Path,
+    *,
+    max_attempts: int = 3,
+    priority: int = 0,
+) -> dict[str, Any]:
+    queued_at = _now_iso()
+    available_at_epoch = time.time()
+    max_attempts = max(1, int(max_attempts))
+    priority = int(priority)
+    with connect_database(db_path) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        existing = connection.execute(
+            """
+            SELECT id, status, attempts, max_attempts, queued_at
+            FROM depression_jobs
+            WHERE session_hash = ? AND run_id = ?
+            """,
+            (session_hash, run_id),
+        ).fetchone()
+        if existing is None:
+            cursor = connection.execute(
+                """
+                INSERT INTO depression_jobs (
+                    session_hash,
+                    run_id,
+                    session_dir,
+                    status,
+                    priority,
+                    attempts,
+                    max_attempts,
+                    queued_at,
+                    available_at_epoch,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, 'queued', ?, 0, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_hash,
+                    run_id,
+                    str(Path(session_dir).resolve()),
+                    priority,
+                    max_attempts,
+                    queued_at,
+                    available_at_epoch,
+                    queued_at,
+                    queued_at,
+                ),
+            )
+            job_id = int(cursor.lastrowid)
+            attempts = 0
+            status = "queued"
+        elif existing["status"] in {"queued", "running", "completed"}:
+            job_id = int(existing["id"])
+            attempts = int(existing["attempts"])
+            max_attempts = int(existing["max_attempts"])
+            queued_at = str(existing["queued_at"])
+            status = str(existing["status"])
+        else:
+            job_id = int(existing["id"])
+            attempts = 0
+            status = "queued"
+            connection.execute(
+                """
+                UPDATE depression_jobs
+                SET session_dir = ?,
+                    status = 'queued',
+                    priority = ?,
+                    attempts = 0,
+                    max_attempts = ?,
+                    queued_at = ?,
+                    available_at_epoch = ?,
+                    claimed_at = NULL,
+                    heartbeat_at = NULL,
+                    lease_expires_at_epoch = NULL,
+                    completed_at = NULL,
+                    worker_id = NULL,
+                    last_error = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    str(Path(session_dir).resolve()),
+                    priority,
+                    max_attempts,
+                    queued_at,
+                    available_at_epoch,
+                    queued_at,
+                    job_id,
+                ),
+            )
+        if status == "queued":
+            connection.execute(
+                """
+                UPDATE realtime_session_runs
+                SET depression_status = 'queued',
+                    depression_total_score = NULL,
+                    depression_binary = NULL,
+                    depression_result_json = NULL,
+                    depression_error = NULL,
+                    depression_completed_at = NULL,
+                    depression_queued_at = ?,
+                    depression_started_at = NULL,
+                    depression_worker_id = NULL
+                WHERE session_hash = ? AND run_id = ?
+                """,
+                (queued_at, session_hash, run_id),
+            )
+    return {
+        "id": job_id,
+        "status": status,
+        "attempts": attempts,
+        "max_attempts": max_attempts,
+        "queued_at": queued_at,
+    }
+
+
+def _recover_expired_depression_jobs(
+    connection: sqlite3.Connection,
+    *,
+    now_epoch: float,
+    now_iso: str,
+) -> tuple[int, int]:
+    expired = connection.execute(
+        """
+        SELECT id, session_hash, run_id, attempts, max_attempts, worker_id
+        FROM depression_jobs
+        WHERE status = 'running'
+          AND lease_expires_at_epoch IS NOT NULL
+          AND lease_expires_at_epoch < ?
+        """,
+        (now_epoch,),
+    ).fetchall()
+    requeued = 0
+    failed = 0
+    for row in expired:
+        message = (
+            "Depression worker lease expired"
+            + (f" ({row['worker_id']})" if row["worker_id"] else "")
+            + "."
+        )
+        if int(row["attempts"]) >= int(row["max_attempts"]):
+            connection.execute(
+                """
+                UPDATE depression_jobs
+                SET status = 'error',
+                    completed_at = ?,
+                    heartbeat_at = NULL,
+                    lease_expires_at_epoch = NULL,
+                    last_error = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now_iso, message, now_iso, row["id"]),
+            )
+            connection.execute(
+                """
+                UPDATE realtime_session_runs
+                SET depression_status = 'error',
+                    depression_error = ?,
+                    depression_completed_at = ?
+                WHERE session_hash = ? AND run_id = ?
+                """,
+                (message, now_iso, row["session_hash"], row["run_id"]),
+            )
+            failed += 1
+        else:
+            connection.execute(
+                """
+                UPDATE depression_jobs
+                SET status = 'queued',
+                    available_at_epoch = ?,
+                    claimed_at = NULL,
+                    heartbeat_at = NULL,
+                    lease_expires_at_epoch = NULL,
+                    worker_id = NULL,
+                    last_error = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now_epoch, message, now_iso, row["id"]),
+            )
+            connection.execute(
+                """
+                UPDATE realtime_session_runs
+                SET depression_status = 'queued',
+                    depression_error = ?,
+                    depression_started_at = NULL,
+                    depression_worker_id = NULL
+                WHERE session_hash = ? AND run_id = ?
+                """,
+                (message, row["session_hash"], row["run_id"]),
+            )
+            requeued += 1
+    return requeued, failed
+
+
+def claim_next_depression_job(
+    db_path: Path,
+    *,
+    worker_id: str,
+    lease_seconds: float = 300.0,
+) -> Optional[dict[str, Any]]:
+    now_epoch = time.time()
+    now_iso = _now_iso()
+    lease_seconds = max(30.0, float(lease_seconds))
+    with connect_database(db_path) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        _recover_expired_depression_jobs(
+            connection,
+            now_epoch=now_epoch,
+            now_iso=now_iso,
+        )
+        row = connection.execute(
+            """
+            SELECT *
+            FROM depression_jobs
+            WHERE status = 'queued'
+              AND attempts < max_attempts
+              AND available_at_epoch <= ?
+            ORDER BY priority DESC, id ASC
+            LIMIT 1
+            """,
+            (now_epoch,),
+        ).fetchone()
+        if row is None:
+            return None
+        lease_expires_at_epoch = now_epoch + lease_seconds
+        cursor = connection.execute(
+            """
+            UPDATE depression_jobs
+            SET status = 'running',
+                attempts = attempts + 1,
+                claimed_at = ?,
+                heartbeat_at = ?,
+                lease_expires_at_epoch = ?,
+                completed_at = NULL,
+                worker_id = ?,
+                updated_at = ?
+            WHERE id = ? AND status = 'queued'
+            """,
+            (
+                now_iso,
+                now_iso,
+                lease_expires_at_epoch,
+                worker_id,
+                now_iso,
+                row["id"],
+            ),
+        )
+        if cursor.rowcount != 1:
+            return None
+        connection.execute(
+            """
+            UPDATE realtime_session_runs
+            SET depression_status = 'running',
+                depression_error = NULL,
+                depression_started_at = ?,
+                depression_worker_id = ?
+            WHERE session_hash = ? AND run_id = ?
+            """,
+            (now_iso, worker_id, row["session_hash"], row["run_id"]),
+        )
+        claimed = dict(row)
+        claimed.update(
+            {
+                "status": "running",
+                "attempts": int(row["attempts"]) + 1,
+                "claimed_at": now_iso,
+                "heartbeat_at": now_iso,
+                "lease_expires_at_epoch": lease_expires_at_epoch,
+                "worker_id": worker_id,
+            }
+        )
+        return claimed
+
+
+def heartbeat_depression_job(
+    db_path: Path,
+    job_id: int,
+    *,
+    worker_id: str,
+    lease_seconds: float = 300.0,
+) -> bool:
+    now_iso = _now_iso()
+    lease_expires_at_epoch = time.time() + max(30.0, float(lease_seconds))
+    with connect_database(db_path) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE depression_jobs
+            SET heartbeat_at = ?,
+                lease_expires_at_epoch = ?,
+                updated_at = ?
+            WHERE id = ? AND status = 'running' AND worker_id = ?
+            """,
+            (now_iso, lease_expires_at_epoch, now_iso, int(job_id), worker_id),
+        )
+        return cursor.rowcount == 1
+
+
+def finish_depression_job(
+    db_path: Path,
+    job_id: int,
+    *,
+    worker_id: str,
+    status: str,
+    error: str | None = None,
+) -> bool:
+    if status not in {"completed", "error"}:
+        raise ValueError("Depression job status must be completed or error.")
+    completed_at = _now_iso()
+    with connect_database(db_path) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE depression_jobs
+            SET status = ?,
+                heartbeat_at = NULL,
+                lease_expires_at_epoch = NULL,
+                completed_at = ?,
+                last_error = ?,
+                updated_at = ?
+            WHERE id = ? AND status = 'running' AND worker_id = ?
+            """,
+            (
+                status,
+                completed_at,
+                error,
+                completed_at,
+                int(job_id),
+                worker_id,
+            ),
+        )
+        return cursor.rowcount == 1
+
+
+def get_depression_job(
+    db_path: Path,
+    session_hash: str,
+    run_id: str,
+) -> Optional[dict[str, Any]]:
+    with connect_database(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT *
+            FROM depression_jobs
+            WHERE session_hash = ? AND run_id = ?
+            LIMIT 1
+            """,
+            (session_hash, run_id),
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def depression_queue_counts(db_path: Path) -> dict[str, int]:
+    with connect_database(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT status, COUNT(*) AS count
+            FROM depression_jobs
+            GROUP BY status
+            """
+        ).fetchall()
+    return {str(row["status"]): int(row["count"]) for row in rows}
+
+
+def update_depression_worker(
+    db_path: Path,
+    *,
+    worker_id: str,
+    gpu_id: str,
+    pid: int,
+    hostname: str,
+    status: str,
+    started_at: str,
+    details: dict[str, Any] | None = None,
+) -> None:
+    heartbeat_at = _now_iso()
+    with connect_database(db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO depression_workers (
+                worker_id,
+                gpu_id,
+                pid,
+                hostname,
+                status,
+                started_at,
+                heartbeat_at,
+                details_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(worker_id) DO UPDATE SET
+                status = excluded.status,
+                heartbeat_at = excluded.heartbeat_at,
+                details_json = COALESCE(
+                    excluded.details_json,
+                    depression_workers.details_json
+                )
+            """,
+            (
+                worker_id,
+                gpu_id,
+                int(pid),
+                hostname,
+                status,
+                started_at,
+                heartbeat_at,
+                dump_json(details) if details is not None else None,
+            ),
+        )
+
+
+def list_depression_workers(db_path: Path) -> list[dict[str, Any]]:
+    with connect_database(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                worker_id,
+                gpu_id,
+                pid,
+                hostname,
+                status,
+                started_at,
+                heartbeat_at,
+                details_json
+            FROM depression_workers
+            ORDER BY heartbeat_at DESC
+            """
+        ).fetchall()
+    return [
+        {
+            "worker_id": row["worker_id"],
+            "gpu_id": row["gpu_id"],
+            "pid": row["pid"],
+            "hostname": row["hostname"],
+            "status": row["status"],
+            "started_at": row["started_at"],
+            "heartbeat_at": row["heartbeat_at"],
+            "details": load_json(row["details_json"], None),
+        }
+        for row in rows
+    ]
+
+
+def heartbeat_depression_worker(
+    db_path: Path,
+    *,
+    worker_id: str,
+    status: str | None = None,
+) -> bool:
+    heartbeat_at = _now_iso()
+    with connect_database(db_path) as connection:
+        if status is None:
+            cursor = connection.execute(
+                """
+                UPDATE depression_workers
+                SET heartbeat_at = ?
+                WHERE worker_id = ?
+                """,
+                (heartbeat_at, worker_id),
+            )
+        else:
+            cursor = connection.execute(
+                """
+                UPDATE depression_workers
+                SET status = ?,
+                    heartbeat_at = ?
+                WHERE worker_id = ?
+                """,
+                (status, heartbeat_at, worker_id),
+            )
+        return cursor.rowcount == 1
+
+
+def update_realtime_session_run_artifacts(
+    db_path: Path,
+    session_hash: str,
+    run_id: str,
+    *,
+    saved_file_names: list[str],
+    saved_file_paths: list[dict[str, Any]],
+    archive_manifest: dict[str, Any] | None = None,
+) -> None:
+    with connect_database(db_path) as connection:
+        connection.execute(
+            """
+            UPDATE realtime_session_runs
+            SET saved_file_names_json = ?,
+                saved_file_paths_json = ?,
+                archive_manifest_json = COALESCE(?, archive_manifest_json)
+            WHERE session_hash = ? AND run_id = ?
+            """,
+            (
+                dump_json(saved_file_names),
+                dump_json(saved_file_paths),
+                dump_json(archive_manifest) if archive_manifest is not None else None,
+                session_hash,
+                run_id,
+            ),
+        )
+
+
+def mark_stale_depression_runs_interrupted(
+    db_path: Path,
+    *,
+    completed_at: str,
+    message: str,
+) -> int:
+    result_json = dump_json(
+        {
+            "status": "interrupted",
+            "completed_at": completed_at,
+            "error": message,
+        }
+    )
+    with connect_database(db_path) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE realtime_session_runs
+            SET depression_status = 'interrupted',
+                depression_result_json = ?,
+                depression_error = ?,
+                depression_completed_at = ?
+            WHERE depression_status IN ('queued', 'running')
+            """,
+            (result_json, message, completed_at),
+        )
+        return int(cursor.rowcount or 0)
 
 
 def get_realtime_session(db_path: Path, session_hash: str) -> Optional[dict[str, Any]]:

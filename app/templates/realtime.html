@@ -1142,6 +1142,246 @@
       overflow-wrap: anywhere;
     }
 
+    .assessment-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 280;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(15, 23, 42, 0.52);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+    .assessment-backdrop[hidden] {
+      display: none !important;
+    }
+    .assessment-panel {
+      width: min(1080px, 100%);
+      max-height: min(880px, calc(100vh - 48px));
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.72);
+      border-radius: 28px;
+      background: rgba(250, 250, 252, 0.96);
+      box-shadow: 0 30px 90px rgba(15, 23, 42, 0.28);
+    }
+    .assessment-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 22px 26px;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    }
+    .assessment-header h2 {
+      margin: 0;
+      color: #111827;
+      font-size: 21px;
+      letter-spacing: -0.02em;
+    }
+    .assessment-header p {
+      margin: 5px 0 0;
+      color: #667085;
+      font-size: 13px;
+    }
+    .assessment-close {
+      width: 40px;
+      height: 40px;
+      min-height: 40px;
+      padding: 0;
+      border-radius: 50%;
+      background: #e9ebf0;
+      color: #273043;
+      font-size: 20px;
+    }
+    .assessment-body {
+      min-height: 280px;
+      overflow-y: auto;
+      padding: 24px 26px 34px;
+    }
+    .assessment-loading {
+      min-height: 420px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+    }
+    .assessment-spinner {
+      width: 58px;
+      height: 58px;
+      margin: 0 auto 22px;
+      border: 5px solid rgba(88, 86, 214, 0.13);
+      border-top-color: #5856d6;
+      border-radius: 50%;
+      animation: status-rotate 0.9s linear infinite;
+    }
+    .assessment-loading h3 {
+      margin: 0 0 8px;
+      color: #171923;
+      font-size: 20px;
+    }
+    .assessment-loading p {
+      max-width: 480px;
+      margin: 0;
+      color: #667085;
+      line-height: 1.7;
+    }
+    .assessment-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+    .assessment-metric {
+      padding: 18px;
+      border: 1px solid rgba(88, 86, 214, 0.12);
+      border-radius: 18px;
+      background: linear-gradient(145deg, #fff, #f5f4ff);
+    }
+    .assessment-metric small {
+      display: block;
+      margin-bottom: 7px;
+      color: #757b8a;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .assessment-metric strong {
+      color: #22233a;
+      font-size: 25px;
+      letter-spacing: -0.03em;
+    }
+    .assessment-warning {
+      margin-bottom: 18px;
+      padding: 13px 15px;
+      border: 1px solid #f4d89a;
+      border-radius: 14px;
+      background: #fff8e8;
+      color: #72551d;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .assessment-aspects {
+      display: grid;
+      gap: 12px;
+    }
+    .aspect-card {
+      overflow: hidden;
+      border: 1px solid rgba(15, 23, 42, 0.1);
+      border-radius: 18px;
+      background: #fff;
+    }
+    .aspect-card summary {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 18px;
+      cursor: pointer;
+      list-style: none;
+    }
+    .aspect-card summary::-webkit-details-marker {
+      display: none;
+    }
+    .aspect-index {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: #eeedff;
+      color: #4b49b9;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .aspect-title strong {
+      display: block;
+      color: #222633;
+      font-size: 14px;
+    }
+    .aspect-title span {
+      display: block;
+      margin-top: 3px;
+      color: #7a8190;
+      font-size: 11px;
+    }
+    .aspect-score {
+      min-width: 66px;
+      padding: 7px 10px;
+      border-radius: 12px;
+      background: #f0f7ff;
+      color: #1769aa;
+      font-size: 12px;
+      font-weight: 750;
+      text-align: center;
+    }
+    .aspect-score.ground-truth {
+      background: #f1f8f2;
+      color: #277844;
+    }
+    .aspect-detail {
+      display: grid;
+      gap: 14px;
+      padding: 0 18px 18px 64px;
+    }
+    .aspect-block {
+      padding: 14px 15px;
+      border-radius: 14px;
+      background: #f7f8fa;
+    }
+    .aspect-block h4 {
+      margin: 0 0 7px;
+      color: #6e7481;
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .aspect-block p {
+      margin: 0;
+      color: #303644;
+      font-size: 12px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+    .retrieved-list {
+      display: grid;
+      gap: 8px;
+    }
+    .retrieved-row {
+      padding: 10px 12px;
+      border-left: 3px solid #8b89e8;
+      border-radius: 0 10px 10px 0;
+      background: #fff;
+      color: #363b47;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .retrieved-meta {
+      display: block;
+      margin-bottom: 4px;
+      color: #838997;
+      font-size: 10px;
+    }
+    .call-btn.result-btn {
+      width: auto;
+      min-width: 106px;
+      height: 48px;
+      padding: 0 16px;
+      border-radius: 999px;
+      background: #eeedff;
+      color: #4543ac;
+      box-shadow: 0 8px 24px rgba(88, 86, 214, 0.15);
+      font-size: 13px;
+      font-weight: 750;
+      gap: 7px;
+    }
+    .call-btn.result-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
     /* Hidden audio element */
     audio { display: none; }
 
@@ -1219,7 +1459,8 @@
       }
 
       .call-btn.end-btn,
-      .call-btn.restart-btn {
+      .call-btn.restart-btn,
+      .call-btn.result-btn {
         min-width: 104px;
         height: 48px;
         padding: 0 18px;
@@ -1241,6 +1482,29 @@
 
       .transcript-sidebar {
         width: 100%;
+      }
+
+      .assessment-backdrop {
+        padding: 0;
+      }
+      .assessment-panel {
+        width: 100%;
+        max-height: 100%;
+        height: 100%;
+        border: 0;
+        border-radius: 0;
+      }
+      .assessment-summary {
+        grid-template-columns: 1fr;
+      }
+      .aspect-card summary {
+        grid-template-columns: 34px minmax(0, 1fr) auto;
+      }
+      .aspect-score.ground-truth {
+        grid-column: 3;
+      }
+      .aspect-detail {
+        padding-left: 18px;
       }
 
       .video-pip {
@@ -1272,7 +1536,7 @@
                 <path d="M5 11a1 1 0 1 1 2 0v1a5 5 0 0 0 10 0v-1a1 1 0 1 1 2 0v1a7 7 0 0 1-6 6.92V21h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.08A7 7 0 0 1 5 12v-1Z"></path>
               </svg>
             </span>
-            <input id="recordAudioToggle" type="checkbox">
+            <input id="recordAudioToggle" type="checkbox" checked>
             <strong>錄音存檔</strong>
           </label>
           <label class="toggle-row" title="關閉後不開攝影機，也不保存或上傳影格。">
@@ -1282,7 +1546,7 @@
                 <path d="M18 9.25a2 2 0 0 1 .9-1.67l2-1.34A1.35 1.35 0 0 1 23 7.36v9.28a1.35 1.35 0 0 1-2.1 1.12l-2-1.34a2 2 0 0 1-.9-1.67v-5.5Z"></path>
               </svg>
             </span>
-            <input id="recordVideoToggle" type="checkbox">
+            <input id="recordVideoToggle" type="checkbox" checked>
             <strong>錄影存檔</strong>
           </label>
         </div>
@@ -1336,6 +1600,12 @@
             </svg>
           </button>
           <div class="right-buttons-group">
+            <button class="call-btn result-btn hidden" id="depressionResultButton" type="button" title="查看憂鬱評估結果">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 19V9M10 19V5M16 19v-7M22 19H2" />
+              </svg>
+              <span>評估結果</span>
+            </button>
             <button class="call-btn mic-btn" id="muteMicButton" type="button" disabled title="靜音" aria-label="靜音" aria-pressed="false">
               <svg class="voice-orb-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
@@ -1377,6 +1647,19 @@
             </div>
           </section>
         </div>
+
+        <div class="assessment-backdrop" id="depressionResultBackdrop" hidden>
+          <section class="assessment-panel" role="dialog" aria-modal="true" aria-labelledby="depressionResultTitle">
+            <header class="assessment-header">
+              <div>
+                <h2 id="depressionResultTitle">PHQ-8 多模態評估</h2>
+                <p id="depressionResultSubtitle">正在準備個人化 aspect 推理</p>
+              </div>
+              <button class="assessment-close" id="depressionResultCloseButton" type="button" aria-label="關閉">×</button>
+            </header>
+            <div class="assessment-body" id="depressionResultBody"></div>
+          </section>
+        </div>
       </div>
     </section>
   </main>
@@ -1388,6 +1671,12 @@
     const EMOTION_CONTEXT_TURN_COUNT = 3;
     const INITIAL_UNCLASSIFIED_TURN_COUNT = 3;
     const STATUS_LISTENING_SETTLE_MS = 400;
+    const ASSISTANT_AUDIO_RELEASE_DELAY_MS = 700;
+    const ASSISTANT_AUDIO_LEVEL_THRESHOLD = 0.008;
+    const BARGE_IN_VOICE_THRESHOLD = 0.035;
+    const BARGE_IN_REQUIRED_FRAMES = 8;
+    const DEPRESSION_POLL_INTERVAL_MS = 5000;
+    const DEPRESSION_POLL_MAX_ATTEMPTS = 120;
     const API_BASE = SCRIPT_ROOT || inferPathPrefix();
     const END_SESSION_ICON = '<span class="pill-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>結束</span>';
     const RESTART_SESSION_ICON = '<svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M20 6v5h-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 18v-5h5"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.2 9A7 7 0 0 0 6.3 6.4L4 8.7"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.8 15a7 7 0 0 0 11.9 2.6L20 15.3"/></svg><span>重新開始</span>';
@@ -1436,6 +1725,12 @@
       traceDetailPrompt: document.getElementById("traceDetailPrompt"),
       traceDetailResponse: document.getElementById("traceDetailResponse"),
       traceDetailCloseButton: document.getElementById("traceDetailCloseButton"),
+      depressionResultButton: document.getElementById("depressionResultButton"),
+      depressionResultBackdrop: document.getElementById("depressionResultBackdrop"),
+      depressionResultTitle: document.getElementById("depressionResultTitle"),
+      depressionResultSubtitle: document.getElementById("depressionResultSubtitle"),
+      depressionResultBody: document.getElementById("depressionResultBody"),
+      depressionResultCloseButton: document.getElementById("depressionResultCloseButton"),
     };
 
     const state = {
@@ -1445,6 +1740,7 @@
       pc: null,
       dc: null,
       localStream: null,
+      outboundAudioTrack: null,
       remoteStream: null,
       userRecorder: null,
       assistantRecorder: null,
@@ -1452,6 +1748,11 @@
       archiveAudioEnabled: false,
       archiveVideoEnabled: false,
       microphoneMuted: false,
+      assistantAudioActive: false,
+      assistantAudioReleaseTimer: null,
+      bargeInActive: false,
+      bargeInVoiceFrames: 0,
+      assistantEchoFloor: 0,
       sessionPhase: SESSION_PHASE.SELECTING,
       sessionReady: false,
       sessionStarting: false,
@@ -1476,12 +1777,20 @@
       currentAssistantItemId: "",
       userTranscriptBuffer: "",
       assistantTranscriptBuffer: "",
+      currentUserSpeechStartMs: 0,
+      pendingUserSpeechIntervals: [],
+      userSpeechIntervals: [],
       responseRequestGeneration: 0,
       currentMemoryContext: "",
       currentMemoryResolved: false,
       currentMemoryStatus: "",
       statusVisualKey: "",
       statusListeningTimer: null,
+      depressionRunId: "",
+      depressionPollTimer: null,
+      depressionPollAttempts: 0,
+      depressionResultData: null,
+      depressionResultView: "idle",
     };
 
     const endButtonController = createEndButtonController(els.endSessionButton, {
@@ -1527,6 +1836,11 @@
     els.traceDetailCloseButton.addEventListener("click", closeTraceDetail);
     els.traceDetailBackdrop.addEventListener("click", (event) => {
       if (event.target === els.traceDetailBackdrop) closeTraceDetail();
+    });
+    els.depressionResultButton.addEventListener("click", handleDepressionResultButton);
+    els.depressionResultCloseButton.addEventListener("click", closeDepressionResult);
+    els.depressionResultBackdrop.addEventListener("click", (event) => {
+      if (event.target === els.depressionResultBackdrop) closeDepressionResult();
     });
 
     window.addEventListener("beforeunload", (event) => {
@@ -1621,11 +1935,22 @@
       state.currentAssistantItemId = "";
       state.userTranscriptBuffer = "";
       state.assistantTranscriptBuffer = "";
+      state.currentUserSpeechStartMs = 0;
+      state.pendingUserSpeechIntervals = [];
+      state.userSpeechIntervals = [];
       state.currentMemoryContext = "";
       state.currentMemoryResolved = false;
       state.currentMemoryStatus = "";
+      clearDepressionPolling();
+      state.depressionRunId = "";
+      state.depressionPollAttempts = 0;
+      state.depressionResultData = null;
+      state.depressionResultView = "idle";
+      els.depressionResultButton.classList.add("hidden");
+      closeDepressionResult();
       state.stopping = false;
       state.microphoneMuted = false;
+      setAssistantAudioActive(false, { immediate: true });
       state.archiveAudioEnabled = els.recordAudioToggle.checked;
       state.archiveVideoEnabled = els.recordVideoToggle.checked;
       setSessionPhase(SESSION_PHASE.STARTING);
@@ -1683,6 +2008,10 @@
       };
       const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
       state.localStream = stream;
+      for (const track of stream.getAudioTracks()) {
+        track.contentHint = "speech";
+      }
+      applyMicrophoneTrackState();
 
       if (state.archiveVideoEnabled) {
         els.localVideo.srcObject = stream;
@@ -1738,8 +2067,15 @@
       };
 
       if (sessionGeneration !== state.sessionGeneration || !state.localStream) return;
-      for (const track of state.localStream.getAudioTracks()) {
-        pc.addTrack(track, state.localStream);
+      const sourceAudioTrack = state.localStream.getAudioTracks()[0];
+      if (sourceAudioTrack) {
+        state.outboundAudioTrack = sourceAudioTrack.clone();
+        state.outboundAudioTrack.contentHint = "speech";
+        applyMicrophoneTrackState();
+        pc.addTrack(
+          state.outboundAudioTrack,
+          new MediaStream([state.outboundAudioTrack])
+        );
       }
 
       const dc = pc.createDataChannel("oai-events");
@@ -1801,19 +2137,26 @@
           break;
         case "response.created":
           state.currentResponseId = event.response?.id || "";
+          setAssistantAudioActive(true);
           setStatus("正在思考");
           break;
         case "input_audio_buffer.speech_started":
+          const wasBargeIn = state.bargeInActive;
           state.responseRequestGeneration++;
           state.currentUserItemId = "";
           state.userTranscriptBuffer = "";
-          if (state.currentResponseId) {
+          state.currentUserSpeechStartMs = Date.now();
+          if (state.currentResponseId && !wasBargeIn) {
             sendRealtimeEvent({ type: "response.cancel", response_id: state.currentResponseId });
           }
           state.currentResponseId = "";
+          if (wasBargeIn) {
+            setAssistantAudioActive(false, { immediate: true });
+          }
           setStatus("使用者說話中");
           break;
         case "input_audio_buffer.speech_stopped":
+          finalizeCurrentUserSpeechInterval();
           setStatus("正在思考");
           break;
         case "conversation.item.input_audio_transcription.segment":
@@ -1824,10 +2167,12 @@
           break;
         case "response.audio.delta":
         case "response.output_audio.delta":
+          setAssistantAudioActive(true);
           setStatus("助理回覆中");
           break;
         case "response.audio_transcript.delta":
         case "response.output_audio_transcript.delta":
+          setAssistantAudioActive(true);
           setStatus("助理回覆中");
           appendAssistantTranscript(event.item_id || "", event.delta || "");
           break;
@@ -1836,6 +2181,7 @@
           break;
         case "response.audio.done":
         case "response.output_audio.done":
+          scheduleAssistantAudioRelease();
           break;
         case "response.audio_transcript.done":
         case "response.output_audio_transcript.done":
@@ -1853,10 +2199,12 @@
           }
           if (!handleFunctionCalls(event.response)) {
             state.currentResponseId = "";
+            scheduleAssistantAudioRelease();
             scheduleListeningStatus();
           }
           break;
         case "error":
+          scheduleAssistantAudioRelease();
           setNotice(`Realtime 錯誤：${event.error?.message || "unknown error"}`);
           break;
         default:
@@ -1889,6 +2237,27 @@
       state.currentMemoryResolved = false;
       state.currentMemoryStatus = "";
       requestEmotionThenAssistantResponse();
+    }
+
+    function secondsSinceSessionStart(timestampMs) {
+      if (!timestampMs || !state.startedAtMs) return 0;
+      return Math.max(0, (timestampMs - state.startedAtMs) / 1000);
+    }
+
+    function finalizeCurrentUserSpeechInterval() {
+      if (!state.currentUserSpeechStartMs) return null;
+      const startMs = state.currentUserSpeechStartMs;
+      const endMs = Math.max(startMs + 1, Date.now());
+      state.currentUserSpeechStartMs = 0;
+      const interval = {
+        start_ms: startMs,
+        end_ms: endMs,
+        audio_start_seconds: secondsSinceSessionStart(startMs),
+        audio_end_seconds: secondsSinceSessionStart(endMs),
+      };
+      state.pendingUserSpeechIntervals.push(interval);
+      state.userSpeechIntervals.push(interval);
+      return interval;
     }
 
     function appendAssistantTranscript(itemId, text) {
@@ -1939,6 +2308,16 @@
         text: normalizedText,
         timestamp_ms: Date.now(),
       };
+      if (speaker === "user") {
+        const interval = state.pendingUserSpeechIntervals.shift()
+          || finalizeCurrentUserSpeechInterval();
+        if (interval) {
+          item.start_ms = interval.start_ms;
+          item.end_ms = interval.end_ms;
+          item.audio_start_seconds = interval.audio_start_seconds;
+          item.audio_end_seconds = interval.audio_end_seconds;
+        }
+      }
       state.transcriptEvents.push(item);
       state.transcriptLines.push(`${speaker === "user" ? "USER" : "ASSISTANT"}: ${normalizedText}`);
       addTranscriptLine(speaker, normalizedText);
@@ -2480,11 +2859,11 @@
 
       try {
         const archive = await cleanupSession(true, endReason);
-        await uploadArchive(archive);
+        const uploadResult = await uploadArchive(archive);
         state.stopping = false;
         setSessionPhase(SESSION_PHASE.ENDED);
         setStatus("已上傳");
-        setNotice("上傳完成。現在可以返回選單頁面，或重新開始同一位使用者的對話。");
+        handleDepressionUploadResponse(uploadResult);
         els.chooseAgainButton.disabled = false;
       } catch (error) {
         state.stopping = false;
@@ -2497,6 +2876,7 @@
 
     async function cleanupSession(buildArchive, endReason = "user_stop") {
       state.sessionReady = false;
+      setAssistantAudioActive(false, { immediate: true });
 
       if (state.dc) {
         try { state.dc.close(); } catch {}
@@ -2506,10 +2886,15 @@
         try { state.pc.close(); } catch {}
         state.pc = null;
       }
+      if (state.outboundAudioTrack) {
+        state.outboundAudioTrack.stop();
+        state.outboundAudioTrack = null;
+      }
 
       let userAudioBlob = null;
       let assistantAudioBlob = null;
       let videoFramesBlob = null;
+      let videoFrameMetadata = null;
       const userSampleRate = state.userRecorder?.sampleRate || 0;
       const assistantSampleRate = state.assistantRecorder?.sampleRate || 24000;
 
@@ -2522,9 +2907,12 @@
         state.assistantRecorder = null;
       }
       if (state.frameSampler) {
-        videoFramesBlob = await state.frameSampler.stop();
+        const sampler = state.frameSampler;
+        videoFramesBlob = await sampler.stop();
+        videoFrameMetadata = sampler.metadata();
         state.frameSampler = null;
       }
+      finalizeCurrentUserSpeechInterval();
 
       if (state.localStream) {
         state.localStream.getTracks().forEach((track) => track.stop());
@@ -2543,6 +2931,7 @@
 
       const endedAtMs = Date.now();
       const metadata = {
+        schema_version: "companion-thesis-realtime-v1",
         session_hash: state.sessionHash,
         started_at_ms: state.startedAtMs,
         ended_at_ms: endedAtMs,
@@ -2552,16 +2941,31 @@
         archive_audio_enabled: state.archiveAudioEnabled,
         archive_video_enabled: state.archiveVideoEnabled,
         user_audio_sample_rate: userSampleRate,
+        user_audio_format: userAudioBlob ? "wav_pcm_s16le_mono" : null,
         assistant_audio_sample_rate: assistantSampleRate,
+        user_speech_interval_count: state.userSpeechIntervals.length,
+        user_speech_interval_source: "realtime.input_audio_buffer.speech_started_stopped",
+        user_speech_interval_timebase: "seconds_since_session_started_at_ms",
+        user_speech_interval_alignment: "wall_clock_approximation_not_sample_exact",
         transcript_event_count: state.transcriptEvents.length,
         source: "web_realtime",
         selected_user: state.selectedUser,
+        video_frame_source: videoFrameMetadata?.source || null,
+        video_frame_sampling_interval_ms: videoFrameMetadata?.sampling_interval_ms || null,
+        video_frame_target_width: videoFrameMetadata?.target_width || null,
+        video_frame_target_height: videoFrameMetadata?.target_height || null,
+        video_frame_jpeg_quality: videoFrameMetadata?.jpeg_quality || null,
+        video_frame_count: videoFrameMetadata?.frame_count || 0,
+        video_frame_naming: videoFramesBlob ? "frame_000001.jpg" : null,
         video_frames_file: videoFramesBlob ? "video_frames.zip" : null,
         user_audio_file: userAudioBlob ? "user_audio.wav" : null,
         assistant_audio_file: assistantAudioBlob ? "assistant_audio.wav" : null,
       };
       const transcript = {
+        schema_version: "companion-thesis-transcript-v1",
         session_hash: state.sessionHash,
+        timebase: "seconds_since_session_started_at_ms",
+        participant_role: "user",
         events: state.transcriptEvents,
         plain_text: state.transcriptLines.join("\n"),
       };
@@ -2601,6 +3005,309 @@
       if (!response.ok || data.status === "error") {
         throw new Error(data.message || `HTTP ${response.status}`);
       }
+      return data;
+    }
+
+    function handleDepressionUploadResponse(data) {
+      const runId = data?.run_id || "";
+      const detection = data?.depression_detection || {};
+      const depressionStatus = detection.status || "";
+      state.depressionRunId = runId;
+      if (depressionStatus === "queued" || depressionStatus === "running") {
+        showDepressionLoading();
+        setStatus("評估中", { force: true });
+        setNotice("上傳完成，憂鬱偵測正在背景執行。完成後會在這裡更新摘要。");
+        startDepressionPolling(state.sessionHash, runId);
+        return;
+      }
+      if (depressionStatus === "disabled") {
+        showDepressionMessage("評估未啟用", "目前伺服器已停用憂鬱偵測。");
+        setNotice("上傳完成。憂鬱偵測目前已停用。");
+        return;
+      }
+      if (depressionStatus === "error") {
+        showDepressionMessage(
+          "無法開始評估",
+          detection.message || detection.error || "未知錯誤"
+        );
+        setNotice(`上傳完成，但憂鬱偵測排程失敗：${detection.message || detection.error || "未知錯誤"}`);
+        return;
+      }
+      setNotice("上傳完成。現在可以返回選單頁面，或重新開始同一位使用者的對話。");
+    }
+
+    function clearDepressionPolling() {
+      if (state.depressionPollTimer) {
+        window.clearTimeout(state.depressionPollTimer);
+        state.depressionPollTimer = null;
+      }
+    }
+
+    function startDepressionPolling(sessionHash, runId) {
+      clearDepressionPolling();
+      if (!sessionHash || !runId) return;
+      state.depressionPollAttempts = 0;
+      pollDepressionStatus(sessionHash, runId);
+    }
+
+    async function pollDepressionStatus(sessionHash, runId) {
+      if (state.sessionHash !== sessionHash || state.depressionRunId !== runId) return;
+      state.depressionPollAttempts += 1;
+      try {
+        const data = await fetchJson(
+          apiPath(`/api/realtime-session/${encodeURIComponent(sessionHash)}/${encodeURIComponent(runId)}/depression`)
+        );
+        if (renderDepressionStatus(data)) {
+          clearDepressionPolling();
+          return;
+        }
+      } catch (error) {
+        if (state.depressionPollAttempts >= DEPRESSION_POLL_MAX_ATTEMPTS) {
+          showDepressionRetryMessage(
+            "評估狀態查詢失敗",
+            `${error.message} 關閉視窗後可按「評估結果」重新查詢。`
+          );
+          setStatus("已上傳", { force: true });
+          setNotice(`上傳完成，但憂鬱偵測狀態查詢失敗：${error.message}`);
+          clearDepressionPolling();
+          return;
+        }
+      }
+
+      if (state.depressionPollAttempts >= DEPRESSION_POLL_MAX_ATTEMPTS) {
+        showDepressionRetryMessage(
+          "評估仍在背景執行",
+          "已超過前端等待時間。關閉視窗後可按「評估結果」重新查詢。"
+        );
+        setStatus("已上傳", { force: true });
+        setNotice("上傳完成，憂鬱偵測仍在背景執行；稍後可重新整理查看結果。");
+        clearDepressionPolling();
+        return;
+      }
+      state.depressionPollTimer = window.setTimeout(
+        () => pollDepressionStatus(sessionHash, runId),
+        DEPRESSION_POLL_INTERVAL_MS
+      );
+    }
+
+    function renderDepressionStatus(data) {
+      const status = data?.depression_status || "";
+      if (status === "queued" || status === "running") {
+        showDepressionLoading(false);
+        setStatus("評估中", { force: true });
+        setNotice("上傳完成，憂鬱偵測正在背景執行。完成後會在這裡更新摘要。");
+        return false;
+      }
+      if (status === "ok") {
+        renderDepressionResult(data);
+        setStatus("已上傳", { force: true });
+        const score = Number(data.depression_total_score);
+        const scoreText = Number.isFinite(score) ? score.toFixed(1) : "-";
+        const binaryText = data.depression_binary === true
+          ? "達憂鬱篩檢門檻"
+          : data.depression_binary === false
+            ? "未達憂鬱篩檢門檻"
+            : "二分類未知";
+        const hardWarnings = data?.depression_result?.metadata?.hard_warnings;
+        const warningText = Array.isArray(hardWarnings) && hardWarnings.length
+          ? ` 注意：${hardWarnings.map((warning) => warning?.message || warning?.code || "method warning").join("；")}`
+          : "";
+        setNotice(`上傳完成。憂鬱偵測完成：PHQ-8 估計總分 ${scoreText}，${binaryText}。${warningText}`);
+        return true;
+      }
+      if (status === "error") {
+        showDepressionMessage(
+          "評估失敗",
+          data.depression_error || "未知錯誤"
+        );
+        setStatus("已上傳", { force: true });
+        setNotice(`上傳完成，但憂鬱偵測失敗：${data.depression_error || "未知錯誤"}`);
+        return true;
+      }
+      if (status === "interrupted") {
+        showDepressionMessage(
+          "評估已中斷",
+          data.depression_error || "伺服器重啟導致背景工作中斷。"
+        );
+        setStatus("已上傳", { force: true });
+        setNotice(`上傳完成，但憂鬱偵測因伺服器重啟中斷：${data.depression_error || "可重新上傳或重新開始對話後再跑一次。"}`);
+        return true;
+      }
+      if (status === "disabled") {
+        showDepressionMessage("評估未啟用", "目前伺服器已停用憂鬱偵測。");
+        setStatus("已上傳", { force: true });
+        setNotice("上傳完成。憂鬱偵測目前已停用。");
+        return true;
+      }
+      return false;
+    }
+
+    function openDepressionResult() {
+      if (!state.depressionResultView || state.depressionResultView === "idle") return;
+      els.depressionResultBackdrop.hidden = false;
+    }
+
+    function handleDepressionResultButton() {
+      if (
+        state.depressionResultView === "retry"
+        && state.sessionHash
+        && state.depressionRunId
+      ) {
+        showDepressionLoading(true);
+        startDepressionPolling(state.sessionHash, state.depressionRunId);
+        return;
+      }
+      openDepressionResult();
+    }
+
+    function closeDepressionResult() {
+      els.depressionResultBackdrop.hidden = true;
+    }
+
+    function showDepressionLoading(open = true) {
+      state.depressionResultView = "loading";
+      state.depressionResultData = null;
+      els.depressionResultButton.classList.remove("hidden");
+      els.depressionResultTitle.textContent = "PHQ-8 多模態評估";
+      els.depressionResultSubtitle.textContent = "DynRAG retrieval 與八個 aspect 推理進行中";
+      els.depressionResultBody.innerHTML = `
+        <div class="assessment-loading">
+          <div>
+            <div class="assessment-spinner" aria-hidden="true"></div>
+            <h3>正在分析這段對話</h3>
+            <p>系統正在建立 personal aspect query、檢索 participant transcript，並整合文字、音訊與影像特徵。完成後會自動更新。</p>
+          </div>
+        </div>
+      `;
+      if (open) openDepressionResult();
+    }
+
+    function showDepressionMessage(title, message) {
+      state.depressionResultView = "message";
+      state.depressionResultData = null;
+      els.depressionResultButton.classList.remove("hidden");
+      els.depressionResultTitle.textContent = title;
+      els.depressionResultSubtitle.textContent = "本次評估沒有可顯示的結果";
+      els.depressionResultBody.innerHTML = `
+        <div class="assessment-loading">
+          <div>
+            <h3>${escapeHtml(title)}</h3>
+            <p>${escapeHtml(message || "")}</p>
+          </div>
+        </div>
+      `;
+      openDepressionResult();
+    }
+
+    function showDepressionRetryMessage(title, message) {
+      showDepressionMessage(title, message);
+      state.depressionResultView = "retry";
+    }
+
+    function displayScore(value, digits = 1) {
+      if (value === null || value === undefined || value === "") return "-";
+      const number = Number(value);
+      return Number.isFinite(number) ? number.toFixed(digits) : "-";
+    }
+
+    function formatRetrievedUtterances(rows) {
+      if (!Array.isArray(rows) || !rows.length) {
+        return '<p>沒有 retrieved transcript。</p>';
+      }
+      return `<div class="retrieved-list">${rows.map((row, index) => {
+        const item = row && typeof row === "object" ? row : { text: String(row || "") };
+        const start = Number(item.start);
+        const end = Number(item.end);
+        const time = Number.isFinite(start) && Number.isFinite(end)
+          ? `${start.toFixed(2)}s - ${end.toFixed(2)}s`
+          : `Utterance ${item.index || index + 1}`;
+        const retrievalScore = Number(item.score);
+        const score = Number.isFinite(retrievalScore)
+          ? ` · retrieval ${retrievalScore.toFixed(3)}`
+          : "";
+        return `
+          <div class="retrieved-row">
+            <span class="retrieved-meta">${escapeHtml(time + score)}</span>
+            ${escapeHtml(item.text || "")}
+          </div>
+        `;
+      }).join("")}</div>`;
+    }
+
+    function renderDepressionResult(data) {
+      const result = data?.depression_result || {};
+      const aspects = Array.isArray(result.aspects) ? result.aspects : [];
+      const groundTruth = result.ground_truth || {};
+      const predictedTotal = result.total_score ?? data.depression_total_score;
+      const groundTruthTotal = groundTruth.total_score ?? data.ground_truth_total_score;
+      const predictedBinary = result.binary_depression ?? data.depression_binary;
+      const warnings = Array.isArray(result?.metadata?.hard_warnings)
+        ? result.metadata.hard_warnings
+        : [];
+
+      state.depressionResultView = "result";
+      state.depressionResultData = data;
+      els.depressionResultButton.classList.remove("hidden");
+      els.depressionResultTitle.textContent = "PHQ-8 多模態評估";
+      els.depressionResultSubtitle.textContent = `Run ${data.run_id || state.depressionRunId || "-"}`;
+
+      const warningHtml = warnings.length
+        ? `<div class="assessment-warning">${warnings.map((warning) => escapeHtml(
+            warning?.message || warning?.code || "method warning"
+          )).join("<br>")}</div>`
+        : "";
+      const aspectHtml = aspects.map((aspect, index) => {
+        const prediction = displayScore(aspect.prediction);
+        const truth = displayScore(aspect.ground_truth, 0);
+        const rationale = aspect.generated_rationale || aspect.generation || "沒有推理內容。";
+        return `
+          <details class="aspect-card" ${index === 0 ? "open" : ""}>
+            <summary>
+              <span class="aspect-index">${index + 1}</span>
+              <span class="aspect-title">
+                <strong>${escapeHtml(aspect.aspect || aspect.aspect_key || `Aspect ${index + 1}`)}</strong>
+                <span>${escapeHtml(aspect.clinical_description || aspect.aspect_key || "")}</span>
+              </span>
+              <span class="aspect-score">預測 ${prediction}</span>
+              <span class="aspect-score ground-truth">GT ${truth}</span>
+            </summary>
+            <div class="aspect-detail">
+              <section class="aspect-block">
+                <h4>Personal aspect query</h4>
+                <p>${escapeHtml(aspect.retrieval_query || "沒有 query。")}</p>
+              </section>
+              <section class="aspect-block">
+                <h4>Retrieved participant transcript</h4>
+                ${formatRetrievedUtterances(aspect.retrieved_utterances)}
+              </section>
+              <section class="aspect-block">
+                <h4>Model rationale</h4>
+                <p>${escapeHtml(rationale)}</p>
+              </section>
+            </div>
+          </details>
+        `;
+      }).join("");
+
+      els.depressionResultBody.innerHTML = `
+        <div class="assessment-summary">
+          <div class="assessment-metric">
+            <small>Predicted PHQ-8</small>
+            <strong>${displayScore(predictedTotal)} / 24</strong>
+          </div>
+          <div class="assessment-metric">
+            <small>Ground truth</small>
+            <strong>${displayScore(groundTruthTotal, 0)} / 24</strong>
+          </div>
+          <div class="assessment-metric">
+            <small>Screening result</small>
+            <strong>${predictedBinary === true ? "陽性" : predictedBinary === false ? "陰性" : "-"}</strong>
+          </div>
+        </div>
+        ${warningHtml}
+        <div class="assessment-aspects">${aspectHtml || "<p>沒有 aspect 結果。</p>"}</div>
+      `;
+      openDepressionResult();
     }
 
     function resetToSelection() {
@@ -2609,8 +3316,16 @@
       state.currentMemoryContext = "";
       state.currentMemoryResolved = false;
       state.currentMemoryStatus = "";
+      clearDepressionPolling();
+      state.depressionRunId = "";
+      state.depressionPollAttempts = 0;
+      state.depressionResultData = null;
+      state.depressionResultView = "idle";
+      els.depressionResultButton.classList.add("hidden");
+      closeDepressionResult();
       state.stopping = false;
       state.microphoneMuted = false;
+      setAssistantAudioActive(false, { immediate: true });
       setSessionPhase(SESSION_PHASE.SELECTING);
       setMicrophoneButtonEnabled(false);
       setMicrophoneMuted(false);
@@ -2738,15 +3453,102 @@
 
     function setMicrophoneMuted(muted) {
       state.microphoneMuted = muted;
-      if (state.localStream) {
-        for (const track of state.localStream.getAudioTracks()) {
-          track.enabled = !muted;
-        }
-      }
+      applyMicrophoneTrackState();
       els.muteMicButton.classList.toggle("muted", muted);
       els.muteMicButton.title = muted ? "開啟麥克風" : "關閉麥克風";
       els.muteMicButton.setAttribute("aria-label", els.muteMicButton.title);
       els.muteMicButton.setAttribute("aria-pressed", String(muted));
+    }
+
+    function applyMicrophoneTrackState() {
+      if (state.localStream) {
+        for (const track of state.localStream.getAudioTracks()) {
+          track.enabled = !state.microphoneMuted;
+        }
+      }
+      if (state.outboundAudioTrack) {
+        state.outboundAudioTrack.enabled = (
+          !state.microphoneMuted
+          && (!state.assistantAudioActive || state.bargeInActive)
+        );
+      }
+    }
+
+    function setAssistantAudioActive(active, { immediate = false } = {}) {
+      if (state.assistantAudioReleaseTimer) {
+        window.clearTimeout(state.assistantAudioReleaseTimer);
+        state.assistantAudioReleaseTimer = null;
+      }
+      if (!active && !immediate) {
+        scheduleAssistantAudioRelease();
+        return;
+      }
+      if (active && !state.assistantAudioActive) {
+        state.bargeInActive = false;
+        state.bargeInVoiceFrames = 0;
+        state.assistantEchoFloor = 0;
+      }
+      if (state.assistantAudioActive === active) return;
+      state.assistantAudioActive = active;
+      if (!active) {
+        state.bargeInActive = false;
+        state.bargeInVoiceFrames = 0;
+        state.assistantEchoFloor = 0;
+      }
+      applyMicrophoneTrackState();
+    }
+
+    function scheduleAssistantAudioRelease(delayMs = ASSISTANT_AUDIO_RELEASE_DELAY_MS) {
+      if (state.assistantAudioReleaseTimer) {
+        window.clearTimeout(state.assistantAudioReleaseTimer);
+      }
+      state.assistantAudioReleaseTimer = window.setTimeout(() => {
+        state.assistantAudioReleaseTimer = null;
+        if (!state.assistantAudioActive) return;
+        state.assistantAudioActive = false;
+        state.bargeInActive = false;
+        state.bargeInVoiceFrames = 0;
+        state.assistantEchoFloor = 0;
+        applyMicrophoneTrackState();
+      }, delayMs);
+    }
+
+    function detectBargeIn(userVolume, remoteVolume) {
+      if (
+        !state.assistantAudioActive
+        || state.bargeInActive
+        || state.microphoneMuted
+        || !state.outboundAudioTrack
+      ) {
+        state.bargeInVoiceFrames = 0;
+        return;
+      }
+
+      const threshold = Math.max(
+        BARGE_IN_VOICE_THRESHOLD,
+        state.assistantEchoFloor * 2.5,
+        remoteVolume * 0.18
+      );
+      if (userVolume >= threshold) {
+        state.bargeInVoiceFrames += 1;
+      } else {
+        state.bargeInVoiceFrames = Math.max(0, state.bargeInVoiceFrames - 1);
+        state.assistantEchoFloor = state.assistantEchoFloor
+          ? state.assistantEchoFloor * 0.92 + userVolume * 0.08
+          : userVolume;
+      }
+      if (state.bargeInVoiceFrames < BARGE_IN_REQUIRED_FRAMES) return;
+
+      state.bargeInActive = true;
+      state.bargeInVoiceFrames = 0;
+      applyMicrophoneTrackState();
+      if (state.currentResponseId) {
+        sendRealtimeEvent({
+          type: "response.cancel",
+          response_id: state.currentResponseId,
+        });
+      }
+      setStatus("使用者說話中");
     }
 
     function setMicrophoneButtonEnabled(enabled) {
@@ -2807,6 +3609,10 @@
           || responseGeneration !== state.responseRequestGeneration
           || state.stopping
         ) {
+          return;
+        }
+        if (state.assistantAudioActive) {
+          scheduleListeningStatus();
           return;
         }
         setStatus("聆聽中");
@@ -2983,6 +3789,10 @@
       constructor(video, onCount) {
         this.video = video;
         this.onCount = onCount;
+        this.intervalMs = 250;
+        this.targetWidth = 640;
+        this.targetHeight = 360;
+        this.jpegQuality = 0.7;
         this.canvas = document.createElement("canvas");
         this.ctx = this.canvas.getContext("2d", { willReadFrequently: false });
         this.frames = [];
@@ -2991,7 +3801,7 @@
       }
 
       start() {
-        this.timer = window.setInterval(() => this.capture(), 100);
+        this.timer = window.setInterval(() => this.capture(), this.intervalMs);
       }
 
       async capture() {
@@ -3000,13 +3810,13 @@
         try {
           const sourceWidth = this.video.videoWidth || 640;
           const sourceHeight = this.video.videoHeight || 360;
-          const scale = Math.min(640 / sourceWidth, 360 / sourceHeight, 1);
+          const scale = Math.min(this.targetWidth / sourceWidth, this.targetHeight / sourceHeight, 1);
           const width = Math.max(1, Math.round(sourceWidth * scale));
           const height = Math.max(1, Math.round(sourceHeight * scale));
           this.canvas.width = width;
           this.canvas.height = height;
           this.ctx.drawImage(this.video, 0, 0, width, height);
-          const blob = await new Promise((resolve) => this.canvas.toBlob(resolve, "image/jpeg", 0.7));
+          const blob = await new Promise((resolve) => this.canvas.toBlob(resolve, "image/jpeg", this.jpegQuality));
           if (blob && blob.size > 0) {
             const name = `frame_${String(this.frames.length + 1).padStart(6, "0")}.jpg`;
             this.frames.push({ name, blob });
@@ -3024,6 +3834,17 @@
         }
         await this.capture();
         return createZip(this.frames);
+      }
+
+      metadata() {
+        return {
+          source: "browser_getUserMedia_canvas_jpeg",
+          sampling_interval_ms: this.intervalMs,
+          target_width: this.targetWidth,
+          target_height: this.targetHeight,
+          jpeg_quality: this.jpegQuality,
+          frame_count: this.frames.length,
+        };
       }
     }
 
@@ -3215,6 +4036,11 @@
         tryConnectAnalysers();
         const userVol = getVolume(vizUserAnalyser, vizUserData);
         const remoteVol = getVolume(vizRemoteAnalyser, vizRemoteData);
+        detectBargeIn(userVol, remoteVol);
+        if (remoteVol > ASSISTANT_AUDIO_LEVEL_THRESHOLD) {
+          setAssistantAudioActive(true);
+          scheduleAssistantAudioRelease();
+        }
         const vol = Math.max(userVol * 0.8, remoteVol * 1.5);
         const assistantGlowTarget = Math.min(1, 0.05 + remoteVol * 8.4);
         const glowEase = assistantGlowTarget > assistantGlowSmoothed ? 0.2 : 0.08;

@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 *.bak
+.DS_Store
 .venv/
 
 .env
@@ -9,5 +10,8 @@ __pycache__/
 
 data/*.sqlite3
 data/*.sqlite3-*
+data/*.lock
+data/.depression_warmup/
 data/hindsight/
 uploads/
+checkpoints/

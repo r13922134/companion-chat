@@ -24,4 +24,4 @@ services:
 
 volumes:
   hindsight-data:
-    name: tmp_hindsight-data
+    name: companion-chat_hindsight-data

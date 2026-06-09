@@ -1,6 +1,8 @@
 from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
+import copy
+import hashlib
 import json
 import os
 import re
@@ -19,23 +21,45 @@ try:
     from .storage import (
         get_realtime_session,
         get_realtime_session_run,
+        get_depression_job,
         initialize_database,
         insert_google_form_response,
+        list_depression_workers,
         list_google_form_response_summaries,
+        depression_queue_counts,
         resolve_database_path,
+        update_realtime_session_run_depression,
         update_realtime_session_run_memory,
         upsert_realtime_session_run,
+    )
+    from .depression_detector import (
+        PREPROCESSING_FILENAME,
+        TRANSLATED_TRANSCRIPT_FILENAME,
+        attach_ground_truth,
+        phq8_ground_truth,
+        queue_realtime_depression_detection,
     )
 except ImportError:
     from storage import (
         get_realtime_session,
         get_realtime_session_run,
+        get_depression_job,
         initialize_database,
         insert_google_form_response,
+        list_depression_workers,
         list_google_form_response_summaries,
+        depression_queue_counts,
         resolve_database_path,
+        update_realtime_session_run_depression,
         update_realtime_session_run_memory,
         upsert_realtime_session_run,
+    )
+    from depression_detector import (
+        PREPROCESSING_FILENAME,
+        TRANSLATED_TRANSCRIPT_FILENAME,
+        attach_ground_truth,
+        phq8_ground_truth,
+        queue_realtime_depression_detection,
     )
 
 try:
@@ -95,6 +119,7 @@ DATABASE_PATH = resolve_database_path(PROJECT_ROOT)
 
 EMOTION_MODEL = "gpt-5.4-mini"
 WEB_SEARCH_MODEL = "gpt-5.4-mini"
+DEPRESSION_TRANSLATION_MODEL = "gpt-5.4-mini"
 REALTIME_MODEL = "gpt-realtime"
 REALTIME_TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
 REALTIME_DEFAULT_VOICE = "coral"
@@ -147,11 +172,14 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
-def read_json_file(path: Path, default=None):
+_JSON_DEFAULT_MISSING = object()
+
+
+def read_json_file(path: Path, default=_JSON_DEFAULT_MISSING):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return {} if default is None else default
+        return {} if default is _JSON_DEFAULT_MISSING else default
 
 
 def write_json_file(path: Path, payload: dict) -> None:
@@ -353,6 +381,20 @@ def get_emotion_model() -> str:
 
 def get_web_search_model() -> str:
     return str(env_config_value("OPENAI_WEB_SEARCH_MODEL", "WEB_SEARCH_MODEL", default=WEB_SEARCH_MODEL)).strip()
+
+
+def get_depression_translation_model() -> str:
+    return str(
+        env_config_value(
+            "OPENAI_DEPRESSION_TRANSLATION_MODEL",
+            "DEPRESSION_TRANSLATION_MODEL",
+            default=DEPRESSION_TRANSLATION_MODEL,
+        )
+    ).strip()
+
+
+def is_depression_translation_enabled() -> bool:
+    return env_flag("DEPRESSION_TRANSLATION_ENABLED", default=True)
 
 
 def get_medical_qa_vector_store_id() -> str:
@@ -820,6 +862,244 @@ def search_realtime_web_context(query: str, recent_messages: List[Dict[str, str]
     }
     response = post_openai_json("/responses", payload, timeout=35)
     return {"prompt": prompt, "output_text": parse_openai_output_text(response)}
+
+
+CJK_RE = re.compile(r"[\u3400-\u9fff]")
+
+
+def _transcript_user_event_rows(transcript: dict) -> list[dict]:
+    events = transcript.get("events") if isinstance(transcript, dict) else None
+    if not isinstance(events, list):
+        return []
+    rows = []
+    utterance_index = 1
+    for event_index, event in enumerate(events):
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("speaker") or "").strip().lower() != "user":
+            continue
+        text = " ".join(str(event.get("text") or "").split())
+        if not text:
+            continue
+        rows.append(
+            {
+                "event_index": event_index,
+                "utterance_index": utterance_index,
+                "text": text,
+            }
+        )
+        utterance_index += 1
+    return rows
+
+
+def _needs_english_translation(rows: list[dict]) -> bool:
+    return any(CJK_RE.search(str(row.get("text") or "")) for row in rows)
+
+
+def _parse_translation_json(content: str) -> dict:
+    raw = (content or "").strip()
+    if raw.startswith("```"):
+        raw = raw.replace("```json", "", 1).replace("```", "").strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        raw = raw[start:end + 1]
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Translation response was not a JSON object")
+    translations = parsed.get("translations")
+    if not isinstance(translations, list):
+        raise RuntimeError("Translation response missing translations array")
+    return parsed
+
+
+def _translate_user_utterance_chunk(rows: list[dict], model: str) -> dict[int, str]:
+    payload_rows = [
+        {"index": int(row["utterance_index"]), "text": str(row["text"])}
+        for row in rows
+    ]
+    system_prompt = (
+        "Translate participant utterances from Traditional Chinese or Mandarin "
+        "into natural clinical English for a PHQ-8 depression screening model. "
+        "Preserve first-person meaning, negation, uncertainty, frequency, "
+        "duration, intensity, temporal references, and symptom wording. Do not "
+        "add diagnoses, scores, interpretations, or advice. If an utterance is "
+        "already English, copy it in clean English. Return only JSON."
+    )
+    user_prompt = (
+        "Return a JSON object with this exact shape: "
+        '{"translations":[{"index":1,"text":"..."}]}. '
+        "Translate each item independently and keep the same index values.\n\n"
+        f"{json.dumps({'utterances': payload_rows}, ensure_ascii=False)}"
+    )
+    payload = {
+        "model": model,
+        "max_completion_tokens": max(600, min(12000, len(user_prompt) // 2 + 800)),
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    response = post_openai_json("/chat/completions", payload, timeout=60)
+    choices = response.get("choices") or []
+    if not choices:
+        raise RuntimeError("Translation response has no choices")
+    message = choices[0].get("message") or {}
+    parsed = _parse_translation_json(str(message.get("content") or ""))
+    translated: dict[int, str] = {}
+    for item in parsed.get("translations") or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            index = int(item.get("index"))
+        except (TypeError, ValueError):
+            continue
+        text = " ".join(str(item.get("text") or "").split())
+        if text:
+            translated[index] = text
+    return translated
+
+
+def build_depression_transcript_text(transcript: dict) -> str:
+    events = transcript.get("events") if isinstance(transcript, dict) else None
+    if not isinstance(events, list):
+        return ""
+    lines = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        speaker = str(event.get("speaker") or "").strip().lower()
+        if speaker not in {"user", "assistant"}:
+            continue
+        text = " ".join(str(event.get("text") or "").split())
+        if not text:
+            continue
+        label = "USER" if speaker == "user" else "ASSISTANT"
+        lines.append(f"{label}: {text}")
+    return "\n".join(lines)
+
+
+def prepare_depression_translation_artifacts(
+    session_dir: Path,
+    transcript: dict | None,
+) -> tuple[dict, list[dict]]:
+    preprocessing = {
+        "translation": {
+            "status": "skipped",
+            "enabled": is_depression_translation_enabled(),
+            "model": get_depression_translation_model(),
+            "source_language": "zh",
+            "target_language": "en",
+            "artifact": None,
+            "message": "",
+        }
+    }
+    created_files: list[dict] = []
+    preprocessing_path = session_dir / PREPROCESSING_FILENAME
+
+    def finish(status: str, message: str = "") -> tuple[dict, list[dict]]:
+        preprocessing["translation"]["status"] = status
+        preprocessing["translation"]["message"] = message
+        write_json_file(preprocessing_path, preprocessing)
+        created_files.append(
+            {
+                "field_name": "depression_preprocessing_file",
+                "filename": PREPROCESSING_FILENAME,
+                "path": str(preprocessing_path),
+            }
+        )
+        return preprocessing, created_files
+
+    if not isinstance(transcript, dict):
+        return finish("skipped_no_transcript", "No transcript JSON was uploaded.")
+
+    rows = _transcript_user_event_rows(transcript)
+    if not rows:
+        return finish("skipped_no_user_utterances", "No user utterances were available.")
+    if not is_depression_translation_enabled():
+        return finish("disabled", "DEPRESSION_TRANSLATION_ENABLED is disabled.")
+    if not _needs_english_translation(rows):
+        return finish("skipped_already_english", "No CJK user text detected.")
+    if not load_openai_api_key():
+        return finish("skipped_no_api_key", openai_key_missing_message())
+
+    model = get_depression_translation_model()
+    try:
+        translated_by_index: dict[int, str] = {}
+        chunk_size = max(1, env_positive_int("DEPRESSION_TRANSLATION_CHUNK_SIZE", 40))
+        for start in range(0, len(rows), chunk_size):
+            chunk = rows[start : start + chunk_size]
+            translated_by_index.update(_translate_user_utterance_chunk(chunk, model))
+        missing = [
+            int(row["utterance_index"])
+            for row in rows
+            if int(row["utterance_index"]) not in translated_by_index
+        ]
+        if missing:
+            raise RuntimeError(f"Translation missing utterance indices: {missing[:10]}")
+
+        translated_transcript = copy.deepcopy(transcript)
+        events = translated_transcript.get("events")
+        assert isinstance(events, list)
+        for row in rows:
+            event = events[int(row["event_index"])]
+            if not isinstance(event, dict):
+                continue
+            original_text = str(row["text"])
+            event["text_original"] = original_text
+            event["text"] = translated_by_index[int(row["utterance_index"])]
+            event["translation_source_language"] = "zh"
+            event["translation_target_language"] = "en"
+            event["translation_model"] = model
+        translated_transcript["translation"] = {
+            "status": "ok",
+            "model": model,
+            "source_language": "zh",
+            "target_language": "en",
+            "user_utterance_count": len(rows),
+        }
+
+        translated_json_path = session_dir / TRANSLATED_TRANSCRIPT_FILENAME
+        write_json_file(translated_json_path, translated_transcript)
+        created_files.append(
+            {
+                "field_name": "depression_transcript_file",
+                "filename": TRANSLATED_TRANSCRIPT_FILENAME,
+                "path": str(translated_json_path),
+            }
+        )
+        translated_text_path = session_dir / "transcript_depression_english.txt"
+        translated_text_path.write_text(
+            build_depression_transcript_text(translated_transcript),
+            encoding="utf-8",
+        )
+        created_files.append(
+            {
+                "field_name": "depression_transcript_text_file",
+                "filename": translated_text_path.name,
+                "path": str(translated_text_path),
+            }
+        )
+        preprocessing["translation"].update(
+            {
+                "status": "ok",
+                "artifact": TRANSLATED_TRANSCRIPT_FILENAME,
+                "user_utterance_count": len(rows),
+                "message": "Translated user utterances for depression detection.",
+            }
+        )
+        write_json_file(preprocessing_path, preprocessing)
+        created_files.append(
+            {
+                "field_name": "depression_preprocessing_file",
+                "filename": PREPROCESSING_FILENAME,
+                "path": str(preprocessing_path),
+            }
+        )
+        return preprocessing, created_files
+    except Exception as exc:
+        return finish("error", str(exc))
 
 
 def search_medical_qa(query: str) -> list[dict]:
@@ -1476,12 +1756,21 @@ def resolve_session_run_directory(
 
 def field_name_for_saved_file(filename: str) -> str:
     return {
+        "archive_manifest.json": "archive_manifest_file",
         "metadata.json": "metadata_file",
         "transcript.json": "transcript_file",
         "transcript.txt": "transcript_text_file",
+        TRANSLATED_TRANSCRIPT_FILENAME: "depression_transcript_file",
+        "transcript_depression_english.txt": "depression_transcript_text_file",
+        PREPROCESSING_FILENAME: "depression_preprocessing_file",
         "user_audio.wav": "user_audio_file",
         "assistant_audio.wav": "assistant_audio_file",
         "video_frames.zip": "video_frames_file",
+        "depression_result.json": "depression_result_file",
+        "depression_error.json": "depression_error_file",
+        "depression_aspect_retrieval.jsonl": "depression_aspect_retrieval_file",
+        "depression_aspect_predictions.csv": "depression_aspect_predictions_file",
+        "user_speech_intervals.csv": "participant_transcript_file",
     }.get(filename, "saved_file")
 
 
@@ -1498,6 +1787,78 @@ def build_saved_file_records(session_dir: Path) -> Tuple[list[str], list[str], l
         for path in files
     ]
     return saved_files, saved_file_names, saved_file_paths
+
+
+def build_archive_manifest(
+    session_hash: str,
+    run_id: str,
+    session_dir: Path,
+    metadata: dict,
+    transcript: dict | None,
+) -> dict:
+    def file_sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    artifacts = []
+    for path in sorted(item for item in session_dir.iterdir() if item.is_file()):
+        if path.name == "archive_manifest.json":
+            continue
+        artifacts.append(
+            {
+                "field_name": field_name_for_saved_file(path.name),
+                "filename": path.name,
+                "size_bytes": path.stat().st_size,
+                "sha256": file_sha256(path),
+            }
+        )
+    ground_truth = phq8_ground_truth(metadata)
+    return {
+        "schema_version": "companion-thesis-realtime-v1",
+        "session_hash": session_hash,
+        "run_id": run_id,
+        "created_at": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+        "prediction_status": (
+            "ok"
+            if (session_dir / "depression_result.json").is_file()
+            else "error"
+            if (session_dir / "depression_error.json").is_file()
+            else "pending"
+        ),
+        "thesis_contract": {
+            "text": {
+                "source": "transcript.events",
+                "participant_role": "user",
+                "event_count": len(transcript.get("events") or [])
+                if isinstance(transcript, dict)
+                else 0,
+                "participant_interval_file": "user_speech_intervals.csv",
+            },
+            "audio": {
+                "filename": "user_audio.wav",
+                "present": (session_dir / "user_audio.wav").is_file(),
+                "format": "wav_pcm_s16le_mono",
+                "sample_rate": metadata.get("user_audio_sample_rate"),
+                "participant_only_at_feature_extraction": True,
+                "missing_policy": "zero_feature_vector",
+            },
+            "video": {
+                "filename": "video_frames.zip",
+                "present": (session_dir / "video_frames.zip").is_file(),
+                "format": "zip_of_timestamp_ordered_jpeg_frames",
+                "sampling_interval_ms": metadata.get(
+                    "video_frame_sampling_interval_ms"
+                ),
+                "frame_count": metadata.get("video_frame_count"),
+                "missing_policy": "zero_feature_vector",
+            },
+            "ground_truth": ground_truth,
+        },
+        "artifacts": artifacts,
+    }
 
 
 def index_realtime_session_run(
@@ -1519,6 +1880,30 @@ def index_realtime_session_run(
         if transcript_text_path.is_file()
         else None
     )
+    depression_result_path = session_dir / "depression_result.json"
+    depression_result = (
+        read_json_file(depression_result_path, default=None)
+        if depression_result_path.is_file()
+        else None
+    )
+    valid_depression_result = (
+        isinstance(depression_result, dict)
+        and depression_result.get("status") == "ok"
+        and isinstance(depression_result.get("aspects"), list)
+    )
+    if valid_depression_result:
+        depression_result = attach_ground_truth(depression_result, metadata)
+        write_json_file(depression_result_path, depression_result)
+    else:
+        depression_result = None
+    depression_error_path = session_dir / "depression_error.json"
+    depression_error = (
+        read_json_file(depression_error_path, default=None)
+        if depression_error_path.is_file()
+        else None
+    )
+    if not isinstance(depression_error, dict):
+        depression_error = None
     fallback_started_at = datetime.fromtimestamp(session_dir.stat().st_mtime).astimezone()
     started_at = str(metadata.get("started_at_iso") or "").strip()
     if not started_at:
@@ -1532,8 +1917,18 @@ def index_realtime_session_run(
         or str((existing_record or {}).get("uploaded_at") or "").strip()
         or datetime.fromtimestamp(session_dir.stat().st_mtime).astimezone().isoformat(timespec="milliseconds")
     )
+    archive_manifest_path = session_dir / "archive_manifest.json"
+    archive_manifest = build_archive_manifest(
+        session_hash,
+        run_id,
+        session_dir,
+        metadata,
+        transcript,
+    )
+    write_json_file(archive_manifest_path, archive_manifest)
     _, saved_file_names, saved_file_paths = build_saved_file_records(session_dir)
     session_dir_name = session_dir.relative_to(upload_root).as_posix()
+    ground_truth = phq8_ground_truth(metadata)
 
     upsert_realtime_session_run(
         database_path,
@@ -1557,8 +1952,36 @@ def index_realtime_session_run(
             "transcript_text": transcript_text,
             "saved_file_names": saved_file_names,
             "saved_file_paths": saved_file_paths,
+            "archive_manifest": archive_manifest,
+            "ground_truth_total_score": ground_truth.get("total_score"),
+            "ground_truth_binary": ground_truth.get("binary_depression"),
         },
     )
+    if depression_result is not None:
+        update_realtime_session_run_depression(
+            database_path,
+            session_hash,
+            run_id,
+            {
+                "status": depression_result.get("status") or "ok",
+                "total_score": depression_result.get("total_score"),
+                "binary": depression_result.get("binary_depression"),
+                "result": depression_result,
+                "completed_at": depression_result.get("completed_at"),
+            },
+        )
+    elif depression_error is not None:
+        update_realtime_session_run_depression(
+            database_path,
+            session_hash,
+            run_id,
+            {
+                "status": depression_error.get("status") or "error",
+                "result": depression_error,
+                "error": depression_error.get("error"),
+                "completed_at": depression_error.get("completed_at"),
+            },
+        )
 
 
 def migrate_legacy_realtime_sessions(database_path: Path, upload_root: Path) -> None:
@@ -1666,10 +2089,14 @@ def upload_realtime_session():
         saved_files = []
         saved_file_names = []
         saved_file_paths = []
-        for field_name in ["metadata_file", "transcript_file", "transcript_text_file"]:
+        canonical_upload_names = {
+            "metadata_file": "metadata.json",
+            "transcript_file": "transcript.json",
+            "transcript_text_file": "transcript.txt",
+        }
+        for field_name, filename in canonical_upload_names.items():
             file = request.files.get(field_name)
             if file and file.filename:
-                filename = secure_filename(file.filename) or f"{field_name}.bin"
                 target = session_dir / filename
                 raw_bytes = cached_uploads.get(field_name)
                 if raw_bytes is None:
@@ -1693,10 +2120,14 @@ def upload_realtime_session():
                     "path": str(target),
                 })
 
-        for field_name in ["user_audio_file", "assistant_audio_file", "video_frames_file"]:
+        canonical_binary_names = {
+            "user_audio_file": "user_audio.wav",
+            "assistant_audio_file": "assistant_audio.wav",
+            "video_frames_file": "video_frames.zip",
+        }
+        for field_name, filename in canonical_binary_names.items():
             file = request.files.get(field_name)
             if file and file.filename:
-                filename = secure_filename(file.filename) or f"{field_name}.bin"
                 target = session_dir / filename
                 file.save(target)
                 saved_files.append(str(target))
@@ -1707,10 +2138,30 @@ def upload_realtime_session():
                     "path": str(target),
                 })
 
+        archive_manifest = build_archive_manifest(
+            session_hash,
+            run_id,
+            session_dir,
+            metadata,
+            transcript,
+        )
+        archive_manifest_path = session_dir / "archive_manifest.json"
+        write_json_file(archive_manifest_path, archive_manifest)
+        saved_files.append(str(archive_manifest_path))
+        saved_file_names.append(archive_manifest_path.name)
+        saved_file_paths.append(
+            {
+                "field_name": "archive_manifest_file",
+                "filename": archive_manifest_path.name,
+                "path": str(archive_manifest_path),
+            }
+        )
+
         started_at = (
             str(metadata.get("started_at_iso") or "").strip()
             or get_session_started_at(metadata, upload_received_datetime).isoformat(timespec="milliseconds")
         )
+        ground_truth = archive_manifest["thesis_contract"]["ground_truth"]
         upsert_realtime_session_run(
             DATABASE_PATH,
             {
@@ -1727,6 +2178,9 @@ def upload_realtime_session():
                 "transcript_text": transcript_text,
                 "saved_file_names": saved_file_names,
                 "saved_file_paths": saved_file_paths,
+                "archive_manifest": archive_manifest,
+                "ground_truth_total_score": ground_truth.get("total_score"),
+                "ground_truth_binary": ground_truth.get("binary_depression"),
             },
         )
 
@@ -1762,10 +2216,42 @@ def upload_realtime_session():
                 flush=True,
             )
 
+        try:
+            depression_update = queue_realtime_depression_detection(
+                DATABASE_PATH,
+                session_hash,
+                run_id,
+                session_dir,
+            )
+        except Exception as exc:
+            depression_update = {
+                "status": "error",
+                "message": str(exc),
+            }
+            try:
+                update_realtime_session_run_depression(
+                    DATABASE_PATH,
+                    session_hash,
+                    run_id,
+                    depression_update,
+                )
+            except Exception as update_exc:
+                print(
+                    f"[DEPRESSION] Failed to save queue error | session={session_hash} "
+                    f"| run={run_id} | error={update_exc}",
+                    flush=True,
+                )
+            print(
+                f"[DEPRESSION] Queue failed | session={session_hash} "
+                f"| run={run_id} | error={exc}",
+                flush=True,
+            )
+
         print(
             f"[UPLOAD] Done   | session={session_hash} | run={run_id} "
             f"| files_saved={len(saved_files)} "
-            f"| memory={memory_update.get('status')}",
+            f"| memory={memory_update.get('status')} "
+            f"| depression={depression_update.get('status')}",
             flush=True,
         )
 
@@ -1782,6 +2268,7 @@ def upload_realtime_session():
                 "saved_file_paths": saved_file_paths,
                 "saved_to": "filesystem+sqlite",
                 "memory_update": memory_update,
+                "depression_detection": depression_update,
             }
         )
 
@@ -1797,6 +2284,58 @@ def upload_realtime_session():
         ), 500
 
 
+@app.get("/api/realtime-session/<session_hash>/<run_id>/depression")
+def realtime_session_depression(session_hash: str, run_id: str):
+    try:
+        sanitized_hash = sanitize_session_hash(session_hash)
+        run_id = str(run_id or "").strip()
+        if not sanitized_hash or not run_id:
+            return jsonify({"status": "error", "message": "missing session_hash or run_id"}), 400
+
+        record = get_realtime_session_run(DATABASE_PATH, sanitized_hash, run_id)
+        if not record:
+            return jsonify({"status": "error", "message": "session run not found"}), 404
+        job = get_depression_job(DATABASE_PATH, sanitized_hash, run_id)
+
+        return jsonify(
+            {
+                "status": "ok",
+                "session_hash": sanitized_hash,
+                "run_id": run_id,
+                "depression_status": record.get("depression_status") or "",
+                "depression_total_score": record.get("depression_total_score"),
+                "depression_binary": record.get("depression_binary"),
+                "depression_error": record.get("depression_error"),
+                "depression_completed_at": record.get("depression_completed_at"),
+                "depression_result": record.get("depression_result"),
+                "ground_truth_total_score": record.get(
+                    "ground_truth_total_score"
+                ),
+                "ground_truth_binary": record.get("ground_truth_binary"),
+                "archive_manifest": record.get("archive_manifest"),
+                "depression_job": (
+                    {
+                        "id": job.get("id"),
+                        "status": job.get("status"),
+                        "attempts": job.get("attempts"),
+                        "max_attempts": job.get("max_attempts"),
+                        "queued_at": job.get("queued_at"),
+                        "claimed_at": job.get("claimed_at"),
+                        "heartbeat_at": job.get("heartbeat_at"),
+                        "worker_id": job.get("worker_id"),
+                        "last_error": job.get("last_error"),
+                    }
+                    if job
+                    else None
+                ),
+            }
+        )
+    except Exception as e:
+        print(f"[ERROR] /api/realtime-session/<session>/<run>/depression failed: {e}", flush=True)
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.get("/health")
 def healthcheck():
     return jsonify({
@@ -1810,6 +2349,8 @@ def healthcheck():
         "hindsight_enabled": is_hindsight_enabled(),
         "hindsight_base_url": get_hindsight_base_url(),
         "database_path": str(DATABASE_PATH),
+        "depression_queue": depression_queue_counts(DATABASE_PATH),
+        "depression_workers": list_depression_workers(DATABASE_PATH),
         "traditional_converter_available": get_traditional_converter() is not None,
         "traditional_converter_error": traditional_converter_error,
     })
@@ -1819,7 +2360,14 @@ if __name__ == "__main__":
     initialize_database(DATABASE_PATH)
     migrate_legacy_realtime_sessions(DATABASE_PATH, UPLOAD_ROOT)
     initialize_openai_client()
-    app.run(host="0.0.0.0", port=9050, debug=True)
+    flask_debug = env_flag("FLASK_DEBUG", default=False)
+    app.run(
+        host="0.0.0.0",
+        port=9050,
+        debug=flask_debug,
+        use_reloader=flask_debug
+        and env_flag("FLASK_USE_RELOADER", default=True),
+    )
 else:
     initialize_database(DATABASE_PATH)
     migrate_legacy_realtime_sessions(DATABASE_PATH, UPLOAD_ROOT)

@@ -16,6 +16,7 @@
 | --- | ---: | --- | --- |
 | Realtime | `9050` | `http://localhost:9050/realtime` | 主對話系統，包含 Hindsight 記憶 |
 | Feedback | `9051` | `http://localhost:9051/realtime` | 回饋版，將有效 feedback 更新到 Vector Store |
+| Depression Worker | 無 | SQLite queue | 單 GPU 常駐模型與 PHQ-8 預測 |
 | Hindsight API | `8888` | `http://localhost:8888/health` | 長期記憶 API |
 | Hindsight UI | `9999` | `http://localhost:9999` | 記憶管理介面 |
 
@@ -27,6 +28,40 @@ uploads/feedback/
 ```
 
 Hindsight 只整合在 Realtime，不會在 Feedback 服務中執行 Recall 或 Retain。
+
+### Realtime 論文資料契約
+
+每次 Realtime 對話會存到
+`uploads/realtime/<session_hash>/<run_id>/`，並由 SQLite
+`realtime_session_runs` 索引。主要檔案如下：
+
+| 檔案 | 用途 |
+| --- | --- |
+| `metadata.json` | 使用者、PHQ-8 ground truth、錄製格式與場次資訊 |
+| `transcript.json` / `transcript.txt` | 含 speaker 與時間戳的完整逐字稿 |
+| `user_audio.wav` | 使用者音訊；模型只從 participant speech intervals 取特徵 |
+| `assistant_audio.wav` | 稽核用 assistant 音訊，不送入憂鬱預測 |
+| `video_frames.zip` | 依時間排序的 JPEG 影格，預設每 250 ms 一張 |
+| `archive_manifest.json` | schema、artifact SHA-256、模態狀態與 ground truth |
+| `depression_result.json` | 八個 aspect 的 query、retrieval、推理與分數 |
+| `depression_aspect_predictions.csv` | 便於論文分析的 aspect-level 表格 |
+
+音訊或影像缺失時仍會執行預測，對應特徵以零向量補齊，並在結果
+`metadata.hard_warnings` 留下原因。逐字稿中的 assistant 內容可供場次稽核，
+但 retrieval 與 participant transcript 僅使用 user utterances；Feedback 服務不會排程憂鬱預測。
+
+Realtime 上傳 API 會先回傳 queued 狀態，前端再輪詢預測結果，因此不會讓上傳 request
+長時間卡住。評估期間顯示 loading modal；完成後顯示 personal aspect query、各 aspect
+推理、retrieved participant transcript、預測分數與 PHQ-8 ground truth。
+
+憂鬱預測工作透過 SQLite `depression_jobs` 佇列交給獨立 GPU worker。Flask process
+不載入 checkpoint，也不執行 GPU inference；Web process 重啟不會遺失 queued job。
+Worker 使用 lease 與 heartbeat，異常中止的 running job 會在 lease 到期後重新排隊。
+同一 GPU ID 使用 filesystem lock，避免誤啟動兩份模型。
+
+應用程式資料庫與 `uploads/` 是 host filesystem 資料；Docker Compose 只執行
+Hindsight，記憶資料獨立存放在 named volume `companion-chat_hindsight-data`。兩者沒有共用資料庫
+或 volume，`docker compose down -v` 只會刪除 Hindsight volume，不會刪除上述應用程式檔案。
 
 ## 前置需求
 
@@ -74,6 +109,17 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
+
+本專案固定使用 PyTorch `2.6.0+cu124`，可搭配目前 NVIDIA driver 535，且符合
+Transformers 載入 HuBERT `.bin` checkpoint 的 `torch.load` 安全版本要求。不可直接安裝
+CUDA 13 build；Transformers 固定為 `4.53.2`。Worker 預設拒絕 silent CPU fallback。
+安裝後確認：
+
+```bash
+python -c 'import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())'
+```
+
+應顯示 `2.6.0+cu124 12.4 True`。
 
 之後每次開新 terminal，都要先執行：
 
@@ -151,6 +197,34 @@ Hindsight 資料保存在 Docker named volume。一般重啟或 `docker compose 
 
 ## Step 5：啟動 Realtime 服務
 
+先啟動單張 RTX 3090 的常駐 prediction worker：
+
+```bash
+cd ~/companion/companion-chat
+source .venv/bin/activate
+python -m app.depression_worker --gpu-id 0
+```
+
+Worker 啟動時會載入並 warm up DynRAG、base-Qwen retrieval、HuBERT 與 ResNet。
+Retrieval 預設共用 detector 的 Qwen 4B 權重，並在 retrieval 時停用 LoRA，因此不會
+在 3090 上重複載入第二份 Qwen 4B。訓練用 gradient checkpointing 會關閉，KV cache
+會重新啟用。
+
+可用環境變數調整 worker：
+
+```dotenv
+DEPRESSION_GPU_ID=0
+DEPRESSION_WORKER_POLL_SECONDS=2
+DEPRESSION_WORKER_LEASE_SECONDS=300
+DEPRESSION_JOB_MAX_ATTEMPTS=3
+DEPRESSION_ASPECT_RETRIEVAL_SHARE_LLM=1
+```
+
+`/health` 的 `depression_workers` 應顯示 `ready`，`depression_queue` 會顯示各狀態數量。
+不要為同一張 GPU 啟動多個 worker；第二個 process 會因 GPU lock 直接失敗。
+若 CUDA 不可用，worker 會立即結束並顯示版本資訊；`--allow-cpu` 僅供診斷，不應用於
+實際預測。
+
 開啟第一個 terminal：
 
 ```bash
@@ -163,6 +237,20 @@ python -m app.server_realtime
 
 ```text
 http://localhost:9050/realtime
+```
+
+Realtime 預設不啟用 Flask debugger/reloader，避免 production process 重啟後重新載入
+Web 程式。開發時若需要自動重載，可暫時設定 `FLASK_DEBUG=1`。GPU worker 是獨立
+process，不會跟著 Flask reloader 重啟。
+
+若要讓 worker 登入後自動啟動，可安裝 user-level systemd service：
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/companion-depression-worker.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now companion-depression-worker
+systemctl --user status companion-depression-worker
 ```
 
 健康檢查：
@@ -233,12 +321,17 @@ curl -X POST http://127.0.0.1:9050/google_form \
 cd ~/companion/companion-chat
 sudo docker compose -f docker-compose.hindsight.yml up -d
 
-# Terminal 2：Realtime
+# Terminal 2：Depression GPU worker
+cd ~/companion/companion-chat
+source .venv/bin/activate
+python -m app.depression_worker --gpu-id 0
+
+# Terminal 3：Realtime
 cd ~/companion/companion-chat
 source .venv/bin/activate
 python -m app.server_realtime
 
-# Terminal 3：Feedback
+# Terminal 4：Feedback
 cd ~/companion/companion-chat
 source .venv/bin/activate
 python -m app.server_feedback
