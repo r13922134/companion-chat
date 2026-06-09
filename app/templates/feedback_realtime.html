@@ -578,6 +578,11 @@
       box-shadow: 0 5px 14px rgba(0, 113, 227, 0.18);
     }
 
+    .call-btn.restart-btn span:not(.pill-dots) {
+      font-size: 13px;
+      letter-spacing: 0.01em;
+    }
+
     .call-btn.end-btn .pill-dots,
     .call-btn.restart-btn .pill-dots {
       display: inline-flex;
@@ -610,7 +615,7 @@
     .video-pip {
       position: fixed;
       top: 20px;
-      right: 20px;
+      left: 20px;
       width: 120px;
       height: 160px;
       border-radius: var(--radius);
@@ -620,6 +625,11 @@
       z-index: 20;
       border: 2px solid rgba(255,255,255,0.2);
       cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+    .video-pip.dragging {
+      cursor: grabbing;
     }
     .video-pip.pip-hidden {
       display: none;
@@ -1005,6 +1015,10 @@
         font-size: 15px;
       }
 
+      .call-btn.restart-btn span:not(.pill-dots) {
+        font-size: 13px;
+      }
+
       .ios-status-bar {
         top: 16px;
         width: min(430px, calc(100% - 24px));
@@ -1026,7 +1040,7 @@
         width: 90px;
         height: 120px;
         top: 12px;
-        right: 12px;
+        left: 12px;
       }
     }
 
@@ -1147,8 +1161,8 @@
     const STATUS_LISTENING_SETTLE_MS = 400;
     const ASSISTANT_AUDIO_RELEASE_DELAY_MS = 700;
     const ASSISTANT_AUDIO_LEVEL_THRESHOLD = 0.008;
-    const BARGE_IN_VOICE_THRESHOLD = 0.035;
-    const BARGE_IN_REQUIRED_FRAMES = 8;
+    const BARGE_IN_VOICE_THRESHOLD = 0.024;
+    const BARGE_IN_REQUIRED_FRAMES = 5;
     const API_BASE = SCRIPT_ROOT || inferPathPrefix();
     const END_SESSION_ICON = '<span class="pill-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>結束</span>';
     const RESTART_SESSION_ICON = '<svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M20 6v5h-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 18v-5h5"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.2 9A7 7 0 0 0 6.3 6.4L4 8.7"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.8 15a7 7 0 0 0 11.9 2.6L20 15.3"/></svg><span>重新開始</span>';
@@ -1266,6 +1280,68 @@
       window.visualViewport.addEventListener("scroll", updateViewportHeightVar, { passive: true });
     }
 
+    function setupDraggableVideoPip(element) {
+      if (!element) return;
+      const margin = 8;
+      let dragState = null;
+
+      function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+      }
+
+      function applyPosition(left, top) {
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        const rect = element.getBoundingClientRect();
+        const maxLeft = Math.max(margin, viewportWidth - rect.width - margin);
+        const maxTop = Math.max(margin, viewportHeight - rect.height - margin);
+        element.style.left = `${clamp(left, margin, maxLeft)}px`;
+        element.style.top = `${clamp(top, margin, maxTop)}px`;
+        element.style.right = "auto";
+      }
+
+      function clampCurrentPosition() {
+        if (element.classList.contains("pip-hidden")) return;
+        const rect = element.getBoundingClientRect();
+        applyPosition(rect.left, rect.top);
+      }
+
+      element.addEventListener("pointerdown", (event) => {
+        if (event.button !== undefined && event.button !== 0) return;
+        const rect = element.getBoundingClientRect();
+        dragState = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          left: rect.left,
+          top: rect.top,
+        };
+        element.classList.add("dragging");
+        element.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+      });
+
+      element.addEventListener("pointermove", (event) => {
+        if (!dragState || event.pointerId !== dragState.pointerId) return;
+        applyPosition(
+          dragState.left + event.clientX - dragState.startX,
+          dragState.top + event.clientY - dragState.startY
+        );
+      });
+
+      function endDrag(event) {
+        if (!dragState || event.pointerId !== dragState.pointerId) return;
+        element.releasePointerCapture?.(event.pointerId);
+        element.classList.remove("dragging");
+        dragState = null;
+      }
+
+      element.addEventListener("pointerup", endDrag);
+      element.addEventListener("pointercancel", endDrag);
+      window.addEventListener("resize", clampCurrentPosition, { passive: true });
+      window.addEventListener("orientationchange", clampCurrentPosition, { passive: true });
+    }
+
     els.endSessionButton.addEventListener("click", () => endButtonController.handleClick());
     els.muteMicButton.addEventListener("click", toggleMicrophoneMute);
     if (els.sidebarToggleButton) {
@@ -1282,6 +1358,7 @@
     els.traceDetailBackdrop.addEventListener("click", (event) => {
       if (event.target === els.traceDetailBackdrop) closeTraceDetail();
     });
+    setupDraggableVideoPip(els.videoPip);
 
     window.addEventListener("beforeunload", (event) => {
       if (state.sessionReady && !state.stopping) {
@@ -2230,7 +2307,7 @@
 
       syncPendingFeedbackFromEditors();
       const endedAtMs = Date.now();
-      const metadata = {
+      const metadata = compactObject({
         session_hash: state.sessionHash,
         started_at_ms: state.startedAtMs,
         ended_at_ms: endedAtMs,
@@ -2248,7 +2325,7 @@
         video_frames_file: null,
         user_audio_file: null,
         assistant_audio_file: null,
-      };
+      });
       const transcript = {
         session_hash: state.sessionHash,
         events: state.transcriptEvents,
@@ -2267,7 +2344,6 @@
       return {
         metadataBlob: jsonBlob(metadata),
         transcriptBlob: jsonBlob(transcript),
-        transcriptTextBlob: new Blob([state.transcriptLines.join("\n")], { type: "text/plain;charset=utf-8" }),
         feedbackBlob: state.feedbackRecords.length ? jsonBlob(feedback) : null,
       };
     }
@@ -2278,7 +2354,6 @@
       formData.append("session_hash", state.sessionHash);
       formData.append("metadata_file", archive.metadataBlob, "metadata.json");
       formData.append("transcript_file", archive.transcriptBlob, "transcript.json");
-      formData.append("transcript_text_file", archive.transcriptTextBlob, "transcript.txt");
       if (archive.feedbackBlob) {
         formData.append("feedback_file", archive.feedbackBlob, "feedback.json");
       }
@@ -2471,8 +2546,8 @@
 
       const threshold = Math.max(
         BARGE_IN_VOICE_THRESHOLD,
-        state.assistantEchoFloor * 2.5,
-        remoteVolume * 0.18
+        state.assistantEchoFloor * 2.0,
+        remoteVolume * 0.12
       );
       if (userVolume >= threshold) {
         state.bargeInVoiceFrames += 1;
@@ -2663,6 +2738,12 @@
 
     function jsonBlob(value) {
       return new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" });
+    }
+
+    function compactObject(value) {
+      return Object.fromEntries(
+        Object.entries(value).filter(([, item]) => item !== null && item !== undefined)
+      );
     }
 
     function parseJsonObject(value) {

@@ -15,14 +15,32 @@ from typing import Any, Optional
 
 try:
     from .depression_preprocessing import prepare_depression_translation_artifacts
+    from .session_artifacts import (
+        artifact_read_path,
+        artifact_record,
+        artifact_relative_path,
+        artifact_write_path,
+        ensure_artifact_parent,
+        iter_artifact_files,
+    )
     from .storage import (
+        attach_latest_google_form_response_to_metadata,
         enqueue_depression_job,
         update_realtime_session_run_artifacts,
         update_realtime_session_run_depression,
     )
 except ImportError:
     from depression_preprocessing import prepare_depression_translation_artifacts
+    from session_artifacts import (
+        artifact_read_path,
+        artifact_record,
+        artifact_relative_path,
+        artifact_write_path,
+        ensure_artifact_parent,
+        iter_artifact_files,
+    )
     from storage import (
+        attach_latest_google_form_response_to_metadata,
         enqueue_depression_job,
         update_realtime_session_run_artifacts,
         update_realtime_session_run_depression,
@@ -40,8 +58,8 @@ ERROR_FILENAME = "depression_error.json"
 PREPROCESSING_FILENAME = "depression_preprocessing.json"
 TRANSLATED_TRANSCRIPT_FILENAME = "transcript_depression_english.json"
 PARTICIPANT_TRANSCRIPT_FILENAME = "user_speech_intervals.csv"
+PARTICIPANT_UTTERANCES_FILENAME = "participant_utterances.jsonl"
 ASPECT_RETRIEVAL_FILENAME = "depression_aspect_retrieval.jsonl"
-ASPECT_PREDICTIONS_FILENAME = "depression_aspect_predictions.csv"
 DEFAULT_ASPECT_RETRIEVAL_MODEL = "Qwen/Qwen3-4B-Instruct-2507"
 DYNRAG_FILTERED_BRANCH = "qwen36_27b_teacher_qwen3_4b_student_hubert_dynrag_filtered"
 
@@ -83,10 +101,12 @@ def read_json_file(path: Path, default: Any = None) -> Any:
 
 
 def write_json_file(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def write_jsonl_file(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -104,18 +124,19 @@ def refresh_archive_manifest(
                 digest.update(chunk)
         return digest.hexdigest()
 
-    manifest_path = session_dir / "archive_manifest.json"
+    manifest_path = artifact_read_path(session_dir, "archive_manifest.json")
     manifest = read_json_file(manifest_path, default={})
     if not isinstance(manifest, dict) or not manifest:
         return None
     artifacts = []
-    for path in sorted(item for item in session_dir.iterdir() if item.is_file()):
+    for path in iter_artifact_files(session_dir):
         if path.name == manifest_path.name:
             continue
         artifacts.append(
             {
                 "field_name": _artifact_field_name(path.name),
                 "filename": path.name,
+                "relative_path": path.relative_to(session_dir).as_posix(),
                 "size_bytes": path.stat().st_size,
                 "sha256": file_sha256(path),
             }
@@ -123,6 +144,11 @@ def refresh_archive_manifest(
     manifest["updated_at"] = now_iso()
     manifest["prediction_status"] = prediction_status
     manifest["artifacts"] = artifacts
+    metadata = read_json_file(artifact_read_path(session_dir, "metadata.json"), default={})
+    if isinstance(metadata, dict):
+        thesis_contract = manifest.setdefault("thesis_contract", {})
+        if isinstance(thesis_contract, dict):
+            thesis_contract["ground_truth"] = phq8_ground_truth(metadata)
     write_json_file(manifest_path, manifest)
     return manifest
 
@@ -131,6 +157,56 @@ def missing_modality_feature(feature_dim: int):
     import torch
 
     return torch.zeros(1, int(feature_dim), dtype=torch.float32)
+
+
+def build_modality_quality_flags(
+    *,
+    audio_zero_fill_reason: str | None,
+    video_zero_fill_reason: str | None,
+    audio_frame_count: int,
+    audio_frame_count_before_sampling: int,
+    audio_downsampled: bool,
+    video_frame_count: int,
+    video_frame_count_before_sampling: int,
+    video_downsampled: bool,
+    participant_speech_seconds: float,
+    speech_interval_count: int,
+    text_utterance_count: int,
+    candidate_text_utterance_count: int | None,
+    video_capture_frame_count: int | None = None,
+) -> dict[str, Any]:
+    incomplete_modalities = [
+        modality
+        for modality, reason in (
+            ("audio", audio_zero_fill_reason),
+            ("video", video_zero_fill_reason),
+        )
+        if reason
+    ]
+    return {
+        "audio_missing": audio_zero_fill_reason is not None,
+        "video_missing": video_zero_fill_reason is not None,
+        "audio_zero_fill_reason": audio_zero_fill_reason,
+        "video_zero_fill_reason": video_zero_fill_reason,
+        "audio_frame_count": int(audio_frame_count),
+        "audio_frame_count_before_sampling": int(audio_frame_count_before_sampling),
+        "audio_downsampled": bool(audio_downsampled),
+        "video_frame_count": int(video_frame_count),
+        "video_frame_count_before_sampling": int(video_frame_count_before_sampling),
+        "video_capture_frame_count": video_capture_frame_count,
+        "video_downsampled": bool(video_downsampled),
+        "participant_speech_seconds": float(participant_speech_seconds),
+        "speech_interval_count": int(speech_interval_count),
+        "text_utterance_count": int(text_utterance_count),
+        "candidate_text_utterance_count": candidate_text_utterance_count,
+        "incomplete_modalities": incomplete_modalities,
+        "prediction_is_based_on_incomplete_modalities": bool(incomplete_modalities),
+        "incomplete_modalities_message": (
+            "prediction is based on incomplete modalities"
+            if incomplete_modalities
+            else None
+        ),
+    }
 
 
 def phq8_ground_truth(metadata: dict[str, Any]) -> dict[str, Any]:
@@ -210,11 +286,18 @@ def resolve_realtime_run_input(
     session_dir: Path,
 ) -> RealtimeRunInput:
     session_dir = Path(session_dir)
-    translated_transcript_path = session_dir / TRANSLATED_TRANSCRIPT_FILENAME
-    transcript_path = translated_transcript_path if translated_transcript_path.is_file() else session_dir / "transcript.json"
+    translated_transcript_path = artifact_read_path(session_dir, TRANSLATED_TRANSCRIPT_FILENAME)
+    transcript_path = (
+        translated_transcript_path
+        if translated_transcript_path.is_file()
+        else artifact_read_path(session_dir, "transcript.json")
+    )
     transcript = read_json_file(transcript_path, default={})
-    metadata = read_json_file(session_dir / "metadata.json", default={})
-    preprocessing = read_json_file(session_dir / PREPROCESSING_FILENAME, default={})
+    metadata = read_json_file(artifact_read_path(session_dir, "metadata.json"), default={})
+    preprocessing = read_json_file(
+        artifact_read_path(session_dir, PREPROCESSING_FILENAME),
+        default={},
+    )
     if not isinstance(transcript, dict):
         transcript = {}
     if not isinstance(metadata, dict):
@@ -229,8 +312,8 @@ def resolve_realtime_run_input(
         transcript_source=transcript_path.name,
         preprocessing=preprocessing,
         metadata=metadata,
-        user_audio_path=session_dir / "user_audio.wav",
-        video_frames_path=session_dir / "video_frames.zip",
+        user_audio_path=artifact_read_path(session_dir, "user_audio.wav"),
+        video_frames_path=artifact_read_path(session_dir, "video_frames.zip"),
     )
 
 
@@ -330,16 +413,39 @@ def write_participant_interval_transcript(
     if not rows:
         return None
     with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["Start_Time", "End_Time", "Text"])
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["utterance_index", "Start_Time", "End_Time", "Text"],
+        )
         writer.writeheader()
-        for start, end, text in rows:
+        for utterance_index, (start, end, text) in enumerate(rows, start=1):
             writer.writerow(
                 {
+                    "utterance_index": utterance_index,
                     "Start_Time": f"{start:.3f}",
                     "End_Time": f"{end:.3f}",
                     "Text": text,
                 }
             )
+    return output_path
+
+
+def write_participant_utterances_jsonl(output_path: Path, utterances: list[Any]) -> Path | None:
+    if not utterances:
+        return None
+    rows = []
+    for utterance in utterances:
+        rows.append(
+            {
+                "utterance_index": int(utterance.index),
+                "speaker": "participant",
+                "source_speaker": "user",
+                "Start_Time": float(utterance.start),
+                "End_Time": float(utterance.end),
+                "Text": str(utterance.text),
+            }
+        )
+    write_jsonl_file(output_path, rows)
     return output_path
 
 
@@ -892,6 +998,12 @@ class RealtimeDepressionDetector:
         utterances = transcript_user_utterances(run_input.transcript)
         if not utterances:
             raise DepressionDetectionError("No user transcript utterances for depression detection.")
+        participant_utterances_path = write_participant_utterances_jsonl(
+            ensure_artifact_parent(
+                artifact_write_path(run_input.session_dir, PARTICIPANT_UTTERANCES_FILENAME)
+            ),
+            utterances,
+        )
 
         cfg = self._cfg
         model = self._model
@@ -923,7 +1035,9 @@ class RealtimeDepressionDetector:
             int(row["aspect_index"]): row for row in retrieval_output.records
         }
         write_jsonl_file(
-            run_input.session_dir / ASPECT_RETRIEVAL_FILENAME,
+            ensure_artifact_parent(
+                artifact_write_path(run_input.session_dir, ASPECT_RETRIEVAL_FILENAME)
+            ),
             retrieval_output.records,
         )
 
@@ -947,7 +1061,12 @@ class RealtimeDepressionDetector:
             else:
                 participant_transcript_path = write_participant_interval_transcript(
                     run_input.transcript,
-                    run_input.session_dir / PARTICIPANT_TRANSCRIPT_FILENAME,
+                    ensure_artifact_parent(
+                        artifact_write_path(
+                            run_input.session_dir,
+                            PARTICIPANT_TRANSCRIPT_FILENAME,
+                        )
+                    ),
                     rows=participant_interval_rows,
                 )
                 if participant_transcript_path is None:
@@ -968,8 +1087,18 @@ class RealtimeDepressionDetector:
                     if audio.numel() == 0 or int(torch.count_nonzero(audio).item()) == 0:
                         audio_zero_fill_reason = "empty_hubert_features"
                         audio = missing_modality_feature(audio_feature_dim)
+        audio_frame_count_before_sampling = (
+            0 if audio_zero_fill_reason else int(audio.shape[0])
+        )
+        audio_downsampled = False
         if data_cfg.get("max_audio_frames"):
-            audio = temporal_uniform_sample(audio, int(data_cfg["max_audio_frames"]))
+            max_audio_frames = int(data_cfg["max_audio_frames"])
+            audio_downsampled = (
+                audio_zero_fill_reason is None
+                and int(audio.shape[0]) > max_audio_frames
+            )
+            audio = temporal_uniform_sample(audio, max_audio_frames)
+        audio_frame_count = 0 if audio_zero_fill_reason else int(audio.shape[0])
 
         video_zero_fill_reason: str | None = None
         if not run_input.video_frames_path.is_file():
@@ -980,8 +1109,18 @@ class RealtimeDepressionDetector:
             if video.numel() == 0 or int(torch.count_nonzero(video).item()) == 0:
                 video_zero_fill_reason = "empty_video_features"
                 video = missing_modality_feature(video_feature_dim)
+        video_frame_count_before_sampling = (
+            0 if video_zero_fill_reason else int(video.shape[0])
+        )
+        video_downsampled = False
         if data_cfg.get("max_video_frames"):
-            video = temporal_uniform_sample(video, int(data_cfg["max_video_frames"]))
+            max_video_frames = int(data_cfg["max_video_frames"])
+            video_downsampled = (
+                video_zero_fill_reason is None
+                and int(video.shape[0]) > max_video_frames
+            )
+            video = temporal_uniform_sample(video, max_video_frames)
+        video_frame_count = 0 if video_zero_fill_reason else int(video.shape[0])
 
         audio_batch, audio_mask = pad_sequence_features([audio], audio_feature_dim)
         video_batch, video_mask = pad_sequence_features([video], video_feature_dim)
@@ -1188,6 +1327,27 @@ class RealtimeDepressionDetector:
         audio_interval_total_seconds = float(
             sum(max(0.0, end - start) for start, end, _ in participant_interval_rows)
         )
+        try:
+            video_capture_frame_count = int(run_input.metadata.get("video_frame_count"))
+        except (TypeError, ValueError):
+            video_capture_frame_count = None
+        quality_flags = build_modality_quality_flags(
+            audio_zero_fill_reason=audio_zero_fill_reason,
+            video_zero_fill_reason=video_zero_fill_reason,
+            audio_frame_count=audio_frame_count,
+            audio_frame_count_before_sampling=audio_frame_count_before_sampling,
+            audio_downsampled=audio_downsampled,
+            video_frame_count=video_frame_count,
+            video_frame_count_before_sampling=video_frame_count_before_sampling,
+            video_downsampled=video_downsampled,
+            participant_speech_seconds=audio_interval_total_seconds,
+            speech_interval_count=len(participant_interval_rows),
+            text_utterance_count=len(utterances),
+            candidate_text_utterance_count=int(
+                retrieval_output.candidate_filter_summary.get("candidate_utterances", 0)
+            ),
+            video_capture_frame_count=video_capture_frame_count,
+        )
         video_shift_warning = {
             "code": "video_feature_source_shift",
             "severity": "hard_warning",
@@ -1227,6 +1387,7 @@ class RealtimeDepressionDetector:
             "binary_depression": None if total_score is None else bool(total_score >= 10.0),
             "threshold": 10.0,
             "ground_truth": ground_truth,
+            "quality_flags": quality_flags,
             "aspects": rows,
             "metadata": {
                 "source": "web_realtime",
@@ -1241,11 +1402,19 @@ class RealtimeDepressionDetector:
                     "video_aligned_to_edaic_mat_resnet": False,
                 },
                 "hard_warnings": hard_warnings,
+                "quality_flags": quality_flags,
                 "dialogue_source": "transcript.events.user_only.aspect_retrieval",
                 "transcript_source": run_input.transcript_source,
                 "text_translation": translation_metadata,
                 "text_language_shift_risk": text_language_shift_risk,
-                "aspect_retrieval_source": ASPECT_RETRIEVAL_FILENAME,
+                "participant_utterances_source": (
+                    artifact_relative_path(PARTICIPANT_UTTERANCES_FILENAME).as_posix()
+                    if participant_utterances_path is not None
+                    else None
+                ),
+                "aspect_retrieval_source": artifact_relative_path(
+                    ASPECT_RETRIEVAL_FILENAME
+                ).as_posix(),
                 "aspect_retrieval_backend_requested": requested_retrieval_backend,
                 "aspect_retrieval_backend": retrieval_output.backend_name,
                 "aspect_retrieval_model": retrieval_output.backend_model_name,
@@ -1471,6 +1640,7 @@ def run_depression_detection_job(
     run_id: str,
     session_dir: Path,
 ) -> dict[str, Any]:
+    session_dir = Path(session_dir)
     update_realtime_session_run_depression(
         database_path,
         session_hash,
@@ -1479,36 +1649,47 @@ def run_depression_detection_job(
     )
     try:
         source_transcript = read_json_file(
-            Path(session_dir) / "transcript.json",
+            artifact_read_path(Path(session_dir), "transcript.json"),
             default={},
         )
         prepare_depression_translation_artifacts(
             Path(session_dir),
             source_transcript if isinstance(source_transcript, dict) else None,
         )
+        metadata = read_json_file(
+            artifact_read_path(session_dir, "metadata.json"),
+            default={},
+        )
+        metadata, metadata_changed = attach_latest_google_form_response_to_metadata(
+            database_path,
+            session_hash=session_hash,
+            metadata=metadata,
+        )
+        if metadata_changed:
+            write_json_file(
+                ensure_artifact_parent(artifact_write_path(session_dir, "metadata.json")),
+                metadata,
+            )
         run_input = resolve_realtime_run_input(session_hash, run_id, session_dir)
         result = get_detector().detect(run_input)
-        write_json_file(session_dir / RESULT_FILENAME, result)
-        write_aspect_predictions_csv(
+        write_json_file(
+            ensure_artifact_parent(artifact_write_path(session_dir, RESULT_FILENAME)),
             result,
-            session_dir / ASPECT_PREDICTIONS_FILENAME,
         )
         archive_manifest = refresh_archive_manifest(
             session_dir,
             prediction_status="ok",
         )
-        artifact_paths = sorted(path for path in session_dir.iterdir() if path.is_file())
+        artifact_paths = list(iter_artifact_files(session_dir))
         update_realtime_session_run_artifacts(
             database_path,
             session_hash,
             run_id,
-            saved_file_names=[path.name for path in artifact_paths],
+            saved_file_names=[
+                path.relative_to(session_dir).as_posix() for path in artifact_paths
+            ],
             saved_file_paths=[
-                {
-                    "field_name": _artifact_field_name(path.name),
-                    "filename": path.name,
-                    "path": str(path),
-                }
+                artifact_record(session_dir, path, _artifact_field_name(path.name))
                 for path in artifact_paths
             ],
             archive_manifest=archive_manifest,
@@ -1523,6 +1704,16 @@ def run_depression_detection_job(
                 "binary": result.get("binary_depression"),
                 "result": result,
                 "completed_at": result.get("completed_at") or now_iso(),
+                "ground_truth_total_score": (
+                    result.get("ground_truth", {}).get("total_score")
+                    if isinstance(result.get("ground_truth"), dict)
+                    else None
+                ),
+                "ground_truth_binary": (
+                    result.get("ground_truth", {}).get("binary_depression")
+                    if isinstance(result.get("ground_truth"), dict)
+                    else None
+                ),
             },
         )
         print(
@@ -1541,23 +1732,24 @@ def run_depression_detection_job(
             "error": str(exc),
             "traceback": traceback.format_exc(),
         }
-        write_json_file(session_dir / ERROR_FILENAME, error_result)
+        write_json_file(
+            ensure_artifact_parent(artifact_write_path(session_dir, ERROR_FILENAME)),
+            error_result,
+        )
         archive_manifest = refresh_archive_manifest(
             session_dir,
             prediction_status="error",
         )
-        artifact_paths = sorted(path for path in session_dir.iterdir() if path.is_file())
+        artifact_paths = list(iter_artifact_files(session_dir))
         update_realtime_session_run_artifacts(
             database_path,
             session_hash,
             run_id,
-            saved_file_names=[path.name for path in artifact_paths],
+            saved_file_names=[
+                path.relative_to(session_dir).as_posix() for path in artifact_paths
+            ],
             saved_file_paths=[
-                {
-                    "field_name": _artifact_field_name(path.name),
-                    "filename": path.name,
-                    "path": str(path),
-                }
+                artifact_record(session_dir, path, _artifact_field_name(path.name))
                 for path in artifact_paths
             ],
             archive_manifest=archive_manifest,
@@ -1611,36 +1803,17 @@ def queue_realtime_depression_detection(
     }
 
 
-def write_aspect_predictions_csv(result: dict[str, Any], output_path: Path) -> None:
-    aspects = result.get("aspects")
-    if not isinstance(aspects, list) or not aspects:
-        return
-    keys: list[str] = []
-    for row in aspects:
-        if isinstance(row, dict):
-            for key in row:
-                if key not in keys:
-                    keys.append(key)
-    with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=keys)
-        writer.writeheader()
-        for row in aspects:
-            if isinstance(row, dict):
-                writer.writerow(row)
-
-
 def _artifact_field_name(filename: str) -> str:
     return {
         RESULT_FILENAME: "depression_result_file",
         ERROR_FILENAME: "depression_error_file",
         ASPECT_RETRIEVAL_FILENAME: "depression_aspect_retrieval_file",
-        ASPECT_PREDICTIONS_FILENAME: "depression_aspect_predictions_file",
         PARTICIPANT_TRANSCRIPT_FILENAME: "participant_transcript_file",
+        PARTICIPANT_UTTERANCES_FILENAME: "participant_utterances_file",
         PREPROCESSING_FILENAME: "depression_preprocessing_file",
         TRANSLATED_TRANSCRIPT_FILENAME: "depression_transcript_file",
         "metadata.json": "metadata_file",
         "transcript.json": "transcript_file",
-        "transcript.txt": "transcript_text_file",
         "user_audio.wav": "user_audio_file",
         "assistant_audio.wav": "assistant_audio_file",
         "video_frames.zip": "video_frames_file",

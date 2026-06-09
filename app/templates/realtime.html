@@ -583,6 +583,14 @@
       0%, 100% { transform: scaleY(0.35); }
       50% { transform: scaleY(1); }
     }
+    @keyframes depression-loader-pulse {
+      0%, 100% { transform: scale(0.96); opacity: 0.62; }
+      50% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes depression-loader-progress {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(280%); }
+    }
 
     .status-wave-bars {
       display: inline-flex;
@@ -815,6 +823,11 @@
       box-shadow: 0 5px 14px rgba(0, 113, 227, 0.18);
     }
 
+    .call-btn.restart-btn span:not(.pill-dots) {
+      font-size: 13px;
+      letter-spacing: 0.01em;
+    }
+
     .call-btn.end-btn .pill-dots,
     .call-btn.restart-btn .pill-dots {
       display: inline-flex;
@@ -847,7 +860,7 @@
     .video-pip {
       position: fixed;
       top: 20px;
-      right: 20px;
+      left: 20px;
       width: 120px;
       height: 160px;
       border-radius: var(--radius);
@@ -857,6 +870,11 @@
       z-index: 20;
       border: 2px solid rgba(255,255,255,0.2);
       cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+    .video-pip.dragging {
+      cursor: grabbing;
     }
     .video-pip.pip-hidden {
       display: none;
@@ -1149,42 +1167,121 @@
       display: grid;
       place-items: center;
       padding: 24px;
-      background: rgba(15, 23, 42, 0.52);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
+      background: rgba(17, 24, 39, 0.42);
+      backdrop-filter: blur(16px) saturate(1.08);
+      -webkit-backdrop-filter: blur(16px) saturate(1.08);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 300ms ease;
     }
     .assessment-backdrop[hidden] {
       display: none !important;
     }
+    .assessment-backdrop.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .assessment-backdrop.is-closing {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 680ms ease;
+    }
     .assessment-panel {
-      width: min(1080px, 100%);
-      max-height: min(880px, calc(100vh - 48px));
+      width: min(860px, calc(100vw - 48px));
+      max-height: min(760px, calc(100dvh - 64px));
       display: flex;
       flex-direction: column;
       overflow: hidden;
       border: 1px solid rgba(255, 255, 255, 0.72);
-      border-radius: 28px;
-      background: rgba(250, 250, 252, 0.96);
-      box-shadow: 0 30px 90px rgba(15, 23, 42, 0.28);
+      border-radius: 22px;
+      background: rgba(250, 250, 252, 0.98);
+      box-shadow: 0 28px 88px rgba(15, 23, 42, 0.32);
+      opacity: 0;
+      transform: translate3d(0, 18px, 0) scale(0.94);
+      transform-origin: center center;
+      transition:
+        border-radius 300ms ease,
+        opacity 300ms ease,
+        transform 320ms cubic-bezier(0.2, 0.9, 0.24, 1);
     }
-    .assessment-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 18px;
-      padding: 22px 26px;
-      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    .assessment-backdrop.is-open .assessment-panel {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
     }
-    .assessment-header h2 {
-      margin: 0;
-      color: #111827;
-      font-size: 21px;
-      letter-spacing: -0.02em;
-    }
+        .assessment-backdrop.is-closing .assessment-panel {
+          opacity: 0;
+          border-radius: 999px;
+          transform:
+            translate3d(
+              var(--assessment-close-x, 0px),
+              var(--assessment-close-y, 80px),
+              0
+            )
+            scale(var(--assessment-close-scale, 0.16));
+          transition:
+            border-radius 640ms ease,
+            opacity 560ms ease,
+            transform 680ms cubic-bezier(0.42, 0, 0.2, 1);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .assessment-backdrop,
+          .assessment-panel,
+          .assessment-backdrop.is-closing .assessment-panel,
+          .depression-loading-ring,
+          .depression-loading-ring::before,
+          .depression-loading-core,
+          .depression-loading-core::before {
+            transition: none;
+            animation: none;
+          }
+          .assessment-panel,
+          .assessment-backdrop.is-open .assessment-panel,
+          .assessment-backdrop.is-closing .assessment-panel {
+            transform: none;
+          }
+        }
+        .assessment-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 18px;
+          padding: 22px 26px;
+          border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+        }
+        .assessment-heading {
+          display: flex;
+          align-items: center;
+          gap: 13px;
+          min-width: 0;
+        }
+        .assessment-header-icon {
+          display: grid;
+          place-items: center;
+          width: 42px;
+          height: 42px;
+          flex: 0 0 auto;
+          border-radius: 14px;
+          background: #fff4df;
+          color: #d16f00;
+          box-shadow: inset 0 0 0 1px rgba(209, 111, 0, 0.12);
+        }
+        .assessment-header-icon svg {
+          width: 22px;
+          height: 22px;
+        }
+        .assessment-header h2 {
+          margin: 0;
+          color: #111827;
+          font-size: 21px;
+          letter-spacing: 0;
+        }
     .assessment-header p {
       margin: 5px 0 0;
       color: #667085;
       font-size: 13px;
+    }
+    .assessment-header p:empty {
+      display: none;
     }
     .assessment-close {
       width: 40px;
@@ -1199,145 +1296,288 @@
     .assessment-body {
       min-height: 280px;
       overflow-y: auto;
-      padding: 24px 26px 34px;
+      padding: 24px 26px 32px;
     }
-    .assessment-loading {
-      min-height: 420px;
-      display: grid;
-      place-items: center;
+    .assessment-loading,
+    .assessment-message {
+      min-height: 380px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .assessment-message {
       text-align: center;
     }
-    .assessment-spinner {
-      width: 58px;
-      height: 58px;
-      margin: 0 auto 22px;
-      border: 5px solid rgba(88, 86, 214, 0.13);
-      border-top-color: #5856d6;
-      border-radius: 50%;
-      animation: status-rotate 0.9s linear infinite;
-    }
-    .assessment-loading h3 {
+    .assessment-message h3 {
       margin: 0 0 8px;
       color: #171923;
       font-size: 20px;
     }
-    .assessment-loading p {
+    .assessment-message p {
       max-width: 480px;
       margin: 0;
       color: #667085;
       line-height: 1.7;
     }
-    .assessment-summary {
+    .assessment-loading-shell {
+      width: min(440px, 100%);
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
-      margin-bottom: 22px;
+      justify-items: center;
+      gap: 18px;
+      padding: 8px 0;
+      text-align: center;
     }
-    .assessment-metric {
-      padding: 18px;
-      border: 1px solid rgba(88, 86, 214, 0.12);
-      border-radius: 18px;
-      background: linear-gradient(145deg, #fff, #f5f4ff);
-    }
-    .assessment-metric small {
-      display: block;
-      margin-bottom: 7px;
-      color: #757b8a;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-    .assessment-metric strong {
-      color: #22233a;
-      font-size: 25px;
-      letter-spacing: -0.03em;
-    }
-    .assessment-warning {
-      margin-bottom: 18px;
-      padding: 13px 15px;
-      border: 1px solid #f4d89a;
-      border-radius: 14px;
-      background: #fff8e8;
-      color: #72551d;
-      font-size: 12px;
-      line-height: 1.55;
-    }
-    .assessment-aspects {
+    .depression-loading-animation {
       display: grid;
-      gap: 12px;
+      justify-items: center;
+      gap: 18px;
+      width: min(300px, 100%);
     }
-    .aspect-card {
+    .depression-loading-ring {
+      position: relative;
       overflow: hidden;
-      border: 1px solid rgba(15, 23, 42, 0.1);
-      border-radius: 18px;
-      background: #fff;
+      width: 100%;
+      height: 3px;
+      border-radius: 999px;
+      background: #edf0f4;
     }
-    .aspect-card summary {
+    .depression-loading-ring::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 42%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #ff9f2e, #5856d6);
+      animation: depression-loader-progress 1.65s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    .depression-loading-core {
+      position: relative;
       display: grid;
-      grid-template-columns: 34px minmax(0, 1fr) auto auto;
-      align-items: center;
-      gap: 12px;
-      padding: 16px 18px;
-      cursor: pointer;
-      list-style: none;
+      place-items: center;
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      background: #fff7ed;
+      color: #d16f00;
+      box-shadow:
+        0 14px 34px rgba(209, 111, 0, 0.12),
+        inset 0 0 0 1px rgba(209, 111, 0, 0.12);
     }
+    .depression-loading-core::before {
+      content: "";
+      position: absolute;
+      inset: -8px;
+      border: 1px solid rgba(209, 111, 0, 0.16);
+      border-radius: 24px;
+      animation: depression-loader-pulse 1.9s ease-in-out infinite;
+    }
+    .depression-loading-core svg {
+      position: relative;
+      z-index: 1;
+      width: 25px;
+      height: 25px;
+    }
+    .assessment-loading-copy {
+      display: grid;
+      gap: 6px;
+    }
+    .assessment-loading-copy h3 {
+      margin: 0;
+      color: #171923;
+      font-size: 19px;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+    .assessment-loading-copy p {
+      margin: 0;
+      color: #667085;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+        .assessment-summary {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+          margin-bottom: 22px;
+        }
+        .assessment-metric {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          min-height: 94px;
+          padding: 18px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 14px;
+          background: #ffffff;
+          box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+        }
+        .assessment-metric.predicted {
+          background: linear-gradient(145deg, #ffffff, #fff7e8);
+        }
+        .assessment-metric.truth {
+          background: linear-gradient(145deg, #ffffff, #eef9f3);
+        }
+        .metric-icon {
+          display: grid;
+          place-items: center;
+          width: 42px;
+          height: 42px;
+          flex: 0 0 auto;
+          border-radius: 13px;
+          background: rgba(255, 159, 46, 0.14);
+          color: #d16f00;
+        }
+        .assessment-metric.truth .metric-icon {
+          background: rgba(52, 199, 89, 0.12);
+          color: #238a45;
+        }
+        .metric-icon svg {
+          width: 21px;
+          height: 21px;
+        }
+        .assessment-metric-content {
+          min-width: 0;
+        }
+        .assessment-metric small {
+          display: block;
+          margin-bottom: 7px;
+          color: #757b8a;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0;
+          text-transform: uppercase;
+        }
+        .assessment-metric strong {
+          color: #22233a;
+          font-size: 25px;
+          letter-spacing: 0;
+        }
+        .assessment-aspects {
+          display: grid;
+          gap: 12px;
+        }
+        .aspect-card {
+          overflow: hidden;
+          border: 1px solid rgba(15, 23, 42, 0.1);
+          border-radius: 14px;
+          background: #fff;
+          box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+        }
+        .aspect-card[open] {
+          border-color: rgba(255, 159, 46, 0.32);
+          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+        }
+        .aspect-card summary {
+          display: grid;
+          grid-template-columns: 42px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 14px;
+          padding: 16px 18px;
+          cursor: pointer;
+          list-style: none;
+        }
     .aspect-card summary::-webkit-details-marker {
       display: none;
     }
-    .aspect-index {
-      display: grid;
-      place-items: center;
-      width: 32px;
-      height: 32px;
-      border-radius: 10px;
-      background: #eeedff;
-      color: #4b49b9;
-      font-size: 12px;
-      font-weight: 800;
-    }
-    .aspect-title strong {
-      display: block;
-      color: #222633;
-      font-size: 14px;
+        .aspect-icon {
+          display: grid;
+          place-items: center;
+          width: 40px;
+          height: 40px;
+          border-radius: 13px;
+          background: #f0f7ff;
+          color: #1769aa;
+        }
+        .aspect-tone-1 .aspect-icon,
+        .aspect-tone-5 .aspect-icon {
+          background: #fff3e1;
+          color: #d16f00;
+        }
+        .aspect-tone-2 .aspect-icon,
+        .aspect-tone-6 .aspect-icon {
+          background: #f1f8f2;
+          color: #238a45;
+        }
+        .aspect-tone-3 .aspect-icon,
+        .aspect-tone-7 .aspect-icon {
+          background: #f8eef8;
+          color: #a34a9c;
+        }
+        .aspect-icon svg {
+          width: 20px;
+          height: 20px;
+        }
+        .aspect-kicker {
+          display: block;
+          margin-bottom: 3px;
+          color: #9a6b2c;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 0;
+        }
+        .aspect-title strong {
+          display: block;
+          color: #222633;
+          font-size: 14px;
     }
     .aspect-title span {
       display: block;
       margin-top: 3px;
-      color: #7a8190;
-      font-size: 11px;
-    }
-    .aspect-score {
-      min-width: 66px;
-      padding: 7px 10px;
-      border-radius: 12px;
-      background: #f0f7ff;
-      color: #1769aa;
-      font-size: 12px;
-      font-weight: 750;
-      text-align: center;
-    }
-    .aspect-score.ground-truth {
-      background: #f1f8f2;
-      color: #277844;
-    }
-    .aspect-detail {
+          color: #7a8190;
+          font-size: 11px;
+        }
+        .aspect-score-stack {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          gap: 7px;
+        }
+        .aspect-score {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
+          min-width: 76px;
+          padding: 7px 10px;
+          border-radius: 12px;
+          background: #f0f7ff;
+          color: #1769aa;
+          font-size: 12px;
+          font-weight: 750;
+          text-align: center;
+        }
+        .aspect-score svg {
+          width: 13px;
+          height: 13px;
+        }
+        .aspect-score.ground-truth {
+          background: #f1f8f2;
+          color: #277844;
+        }
+        .aspect-detail {
       display: grid;
       gap: 14px;
       padding: 0 18px 18px 64px;
     }
-    .aspect-block {
-      padding: 14px 15px;
-      border-radius: 14px;
-      background: #f7f8fa;
-    }
-    .aspect-block h4 {
-      margin: 0 0 7px;
-      color: #6e7481;
-      font-size: 10px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
+        .aspect-block {
+          padding: 14px 15px;
+          border-radius: 12px;
+          background: #f7f8fa;
+        }
+        .aspect-block h4 {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 0 0 7px;
+          color: #6e7481;
+          font-size: 10px;
+          letter-spacing: 0;
+          text-transform: uppercase;
+        }
+        .aspect-block h4 svg {
+          width: 13px;
+          height: 13px;
+        }
     .aspect-block p {
       margin: 0;
       color: #303644;
@@ -1349,13 +1589,13 @@
       display: grid;
       gap: 8px;
     }
-    .retrieved-row {
-      padding: 10px 12px;
-      border-left: 3px solid #8b89e8;
-      border-radius: 0 10px 10px 0;
-      background: #fff;
-      color: #363b47;
-      font-size: 12px;
+        .retrieved-row {
+          padding: 10px 12px;
+          border-left: 3px solid #8b89e8;
+          border-radius: 0 8px 8px 0;
+          background: #fff;
+          color: #363b47;
+          font-size: 12px;
       line-height: 1.55;
     }
     .retrieved-meta {
@@ -1365,21 +1605,19 @@
       font-size: 10px;
     }
     .call-btn.result-btn {
-      width: auto;
-      min-width: 106px;
+      width: 48px;
+      min-width: 48px;
       height: 48px;
-      padding: 0 16px;
+      padding: 0;
       border-radius: 999px;
       background: #eeedff;
       color: #4543ac;
       box-shadow: 0 8px 24px rgba(88, 86, 214, 0.15);
-      font-size: 13px;
       font-weight: 750;
-      gap: 7px;
     }
     .call-btn.result-btn svg {
-      width: 18px;
-      height: 18px;
+      width: 20px;
+      height: 20px;
     }
 
     /* Hidden audio element */
@@ -1459,12 +1697,22 @@
       }
 
       .call-btn.end-btn,
-      .call-btn.restart-btn,
-      .call-btn.result-btn {
+      .call-btn.restart-btn {
         min-width: 104px;
         height: 48px;
         padding: 0 18px;
         font-size: 15px;
+      }
+
+      .call-btn.restart-btn span:not(.pill-dots) {
+        font-size: 13px;
+      }
+
+      .call-btn.result-btn {
+        width: 48px;
+        min-width: 48px;
+        height: 48px;
+        padding: 0;
       }
 
       .ios-status-bar {
@@ -1485,23 +1733,43 @@
       }
 
       .assessment-backdrop {
-        padding: 0;
+        padding: 14px;
       }
       .assessment-panel {
-        width: 100%;
-        max-height: 100%;
-        height: 100%;
-        border: 0;
-        border-radius: 0;
+        width: min(700px, calc(100vw - 28px));
+        max-height: min(760px, calc(100dvh - 36px));
+        height: auto;
+        border: 1px solid rgba(255, 255, 255, 0.72);
+        border-radius: 22px;
+      }
+      .assessment-header {
+        padding: 18px;
+      }
+      .assessment-header-icon {
+        width: 38px;
+        height: 38px;
+      }
+      .assessment-body {
+        padding: 20px 18px 24px;
+      }
+      .assessment-loading,
+      .assessment-message {
+        min-height: 340px;
+      }
+      .depression-loading-animation {
+        width: min(260px, 100%);
       }
       .assessment-summary {
         grid-template-columns: 1fr;
       }
       .aspect-card summary {
-        grid-template-columns: 34px minmax(0, 1fr) auto;
+        grid-template-columns: 40px minmax(0, 1fr);
+        align-items: start;
       }
-      .aspect-score.ground-truth {
-        grid-column: 3;
+      .aspect-score-stack {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+        padding-left: 54px;
       }
       .aspect-detail {
         padding-left: 18px;
@@ -1511,7 +1779,7 @@
         width: 90px;
         height: 120px;
         top: 12px;
-        right: 12px;
+        left: 12px;
       }
     }
   </style>
@@ -1536,7 +1804,7 @@
                 <path d="M5 11a1 1 0 1 1 2 0v1a5 5 0 0 0 10 0v-1a1 1 0 1 1 2 0v1a7 7 0 0 1-6 6.92V21h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.08A7 7 0 0 1 5 12v-1Z"></path>
               </svg>
             </span>
-            <input id="recordAudioToggle" type="checkbox" checked>
+            <input id="recordAudioToggle" type="checkbox">
             <strong>錄音存檔</strong>
           </label>
           <label class="toggle-row" title="關閉後不開攝影機，也不保存或上傳影格。">
@@ -1546,7 +1814,7 @@
                 <path d="M18 9.25a2 2 0 0 1 .9-1.67l2-1.34A1.35 1.35 0 0 1 23 7.36v9.28a1.35 1.35 0 0 1-2.1 1.12l-2-1.34a2 2 0 0 1-.9-1.67v-5.5Z"></path>
               </svg>
             </span>
-            <input id="recordVideoToggle" type="checkbox" checked>
+            <input id="recordVideoToggle" type="checkbox">
             <strong>錄影存檔</strong>
           </label>
         </div>
@@ -1600,11 +1868,10 @@
             </svg>
           </button>
           <div class="right-buttons-group">
-            <button class="call-btn result-btn hidden" id="depressionResultButton" type="button" title="查看憂鬱評估結果">
+            <button class="call-btn result-btn hidden" id="depressionResultButton" type="button" title="查看憂鬱評估結果" aria-label="查看憂鬱評估結果">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M4 19V9M10 19V5M16 19v-7M22 19H2" />
               </svg>
-              <span>評估結果</span>
             </button>
             <button class="call-btn mic-btn" id="muteMicButton" type="button" disabled title="靜音" aria-label="靜音" aria-pressed="false">
               <svg class="voice-orb-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -1648,15 +1915,23 @@
           </section>
         </div>
 
-        <div class="assessment-backdrop" id="depressionResultBackdrop" hidden>
-          <section class="assessment-panel" role="dialog" aria-modal="true" aria-labelledby="depressionResultTitle">
-            <header class="assessment-header">
-              <div>
-                <h2 id="depressionResultTitle">PHQ-8 多模態評估</h2>
-                <p id="depressionResultSubtitle">正在準備個人化 aspect 推理</p>
-              </div>
-              <button class="assessment-close" id="depressionResultCloseButton" type="button" aria-label="關閉">×</button>
-            </header>
+            <div class="assessment-backdrop" id="depressionResultBackdrop" hidden>
+              <section class="assessment-panel" role="dialog" aria-modal="true" aria-labelledby="depressionResultTitle">
+                <header class="assessment-header">
+                  <div class="assessment-heading">
+                    <span class="assessment-header-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 3l1.7 5.1L19 10l-5.3 1.9L12 17l-1.7-5.1L5 10l5.3-1.9L12 3z"></path>
+                        <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"></path>
+                      </svg>
+                    </span>
+                    <div>
+                      <h2 id="depressionResultTitle">PHQ-8 多模態評估</h2>
+                      <p id="depressionResultSubtitle">正在準備個人化面向推理</p>
+                    </div>
+                  </div>
+                  <button class="assessment-close" id="depressionResultCloseButton" type="button" aria-label="關閉">×</button>
+                </header>
             <div class="assessment-body" id="depressionResultBody"></div>
           </section>
         </div>
@@ -1673,11 +1948,12 @@
     const STATUS_LISTENING_SETTLE_MS = 400;
     const ASSISTANT_AUDIO_RELEASE_DELAY_MS = 700;
     const ASSISTANT_AUDIO_LEVEL_THRESHOLD = 0.008;
-    const BARGE_IN_VOICE_THRESHOLD = 0.035;
-    const BARGE_IN_REQUIRED_FRAMES = 8;
-    const DEPRESSION_POLL_INTERVAL_MS = 5000;
-    const DEPRESSION_POLL_MAX_ATTEMPTS = 120;
-    const API_BASE = SCRIPT_ROOT || inferPathPrefix();
+    const BARGE_IN_VOICE_THRESHOLD = 0.024;
+    const BARGE_IN_REQUIRED_FRAMES = 5;
+        const DEPRESSION_POLL_INTERVAL_MS = 5000;
+        const DEPRESSION_POLL_MAX_ATTEMPTS = 120;
+        const DEPRESSION_MODAL_CLOSE_MS = 720;
+        const API_BASE = SCRIPT_ROOT || inferPathPrefix();
     const END_SESSION_ICON = '<span class="pill-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>結束</span>';
     const RESTART_SESSION_ICON = '<svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M20 6v5h-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 18v-5h5"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.2 9A7 7 0 0 0 6.3 6.4L4 8.7"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.8 15a7 7 0 0 0 11.9 2.6L20 15.3"/></svg><span>重新開始</span>';
     const SESSION_PHASE = Object.freeze({
@@ -1787,8 +2063,9 @@
       statusVisualKey: "",
       statusListeningTimer: null,
       depressionRunId: "",
-      depressionPollTimer: null,
-      depressionPollAttempts: 0,
+          depressionPollTimer: null,
+          depressionCloseTimer: null,
+          depressionPollAttempts: 0,
       depressionResultData: null,
       depressionResultView: "idle",
     };
@@ -1819,6 +2096,75 @@
       window.visualViewport.addEventListener("scroll", updateViewportHeightVar, { passive: true });
     }
 
+    function setupDraggableVideoPip(element) {
+      if (!element) return;
+      const margin = 8;
+      let dragState = null;
+
+      function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+      }
+
+      function applyPosition(left, top) {
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        const rect = element.getBoundingClientRect();
+        const maxLeft = Math.max(margin, viewportWidth - rect.width - margin);
+        const maxTop = Math.max(margin, viewportHeight - rect.height - margin);
+        element.style.left = `${clamp(left, margin, maxLeft)}px`;
+        element.style.top = `${clamp(top, margin, maxTop)}px`;
+        element.style.right = "auto";
+      }
+
+      function clampCurrentPosition() {
+        if (element.classList.contains("pip-hidden")) return;
+        const rect = element.getBoundingClientRect();
+        applyPosition(rect.left, rect.top);
+      }
+
+      element.addEventListener("pointerdown", (event) => {
+        if (event.button !== undefined && event.button !== 0) return;
+        const rect = element.getBoundingClientRect();
+        dragState = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          left: rect.left,
+          top: rect.top,
+        };
+        element.classList.add("dragging");
+        element.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+      });
+
+      element.addEventListener("pointermove", (event) => {
+        if (!dragState || event.pointerId !== dragState.pointerId) return;
+        applyPosition(
+          dragState.left + event.clientX - dragState.startX,
+          dragState.top + event.clientY - dragState.startY
+        );
+      });
+
+      function endDrag(event) {
+        if (!dragState || event.pointerId !== dragState.pointerId) return;
+        element.releasePointerCapture?.(event.pointerId);
+        element.classList.remove("dragging");
+        dragState = null;
+      }
+
+      element.addEventListener("pointerup", endDrag);
+      element.addEventListener("pointercancel", endDrag);
+      window.addEventListener("resize", clampCurrentPosition, { passive: true });
+      window.addEventListener("orientationchange", clampCurrentPosition, { passive: true });
+    }
+
+    function resetVideoPipPosition(element) {
+      if (!element) return;
+      element.style.left = "";
+      element.style.top = "";
+      element.style.right = "";
+    }
+
     els.refreshUsersButton.addEventListener("click", loadUsers);
     els.endSessionButton.addEventListener("click", () => endButtonController.handleClick());
     els.chooseAgainButton.addEventListener("click", resetToSelection);
@@ -1842,6 +2188,7 @@
     els.depressionResultBackdrop.addEventListener("click", (event) => {
       if (event.target === els.depressionResultBackdrop) closeDepressionResult();
     });
+    setupDraggableVideoPip(els.videoPip);
 
     window.addEventListener("beforeunload", (event) => {
       if (state.sessionReady && !state.stopping) {
@@ -1877,8 +2224,9 @@
       }
       setUserStatus(`找到 ${users.length} 位使用者。`);
       for (const user of users) {
+        const sessionHash = userSessionHash(user);
         const card = document.createElement("article");
-        card.className = "user-card" + (!user.form_hash ? " disabled" : "");
+        card.className = "user-card" + (!sessionHash ? " disabled" : "");
         const name = user.name || "未命名使用者";
         const rawPhq = user.phq8_score;
         const phq = rawPhq === null || rawPhq === undefined || rawPhq === "" ? null : Number(rawPhq);
@@ -1886,12 +2234,12 @@
 
         const ageText = user.age ? `${user.age} 歲` : "年齡未填";
         const dateStr = formatDate(user.submitted_at || user.received_at || "");
-        const shortHash = user.form_hash ? user.form_hash.slice(0, 8) : "-";
+        const shortHash = sessionHash ? sessionHash.slice(0, 8) : "-";
 
         card.innerHTML = `
           <div class="user-card-header">
             <strong class="user-name">${escapeHtml(name)}</strong>
-            <span class="user-hash" title="${escapeHtml(user.form_hash || '')}">${escapeHtml(shortHash)}</span>
+            <span class="user-hash" title="${escapeHtml(sessionHash || '')}">${escapeHtml(shortHash)}</span>
           </div>
           <div class="user-badges">
             <span class="badge age-badge">${escapeHtml(ageText)}</span>
@@ -1901,22 +2249,32 @@
             <span class="user-date">${escapeHtml(dateStr)}</span>
           </div>
         `;
-        if (user.form_hash) {
+        if (sessionHash) {
           card.addEventListener("click", () => startConversation(user));
         }
         els.userList.appendChild(card);
       }
     }
 
+    function userSessionHash(user) {
+      return String(user?.session_hash || user?.account_hash || user?.user_key || user?.form_hash || "").trim();
+    }
+
     async function startConversation(user) {
-      if (!user.form_hash) {
-        setUserStatus("此使用者缺少 form_hash，無法開始。");
+      const sessionHash = userSessionHash(user);
+      if (!sessionHash) {
+        setUserStatus("此使用者缺少帳號 id，無法開始。");
         return;
       }
 
       const sessionGeneration = ++state.sessionGeneration;
-      state.selectedUser = user;
-      state.sessionHash = user.form_hash;
+      state.selectedUser = {
+        ...user,
+        user_key: user.user_key || sessionHash,
+        account_hash: user.account_hash || sessionHash,
+        session_hash: sessionHash,
+      };
+      state.sessionHash = sessionHash;
       state.startedAtMs = Date.now();
       state.responseRequestGeneration++;
       state.currentConversationMode = "";
@@ -1946,8 +2304,8 @@
       state.depressionPollAttempts = 0;
       state.depressionResultData = null;
       state.depressionResultView = "idle";
-      els.depressionResultButton.classList.add("hidden");
       closeDepressionResult();
+      els.depressionResultButton.classList.add("hidden");
       state.stopping = false;
       state.microphoneMuted = false;
       setAssistantAudioActive(false, { immediate: true });
@@ -2015,6 +2373,7 @@
 
       if (state.archiveVideoEnabled) {
         els.localVideo.srcObject = stream;
+        resetVideoPipPosition(els.videoPip);
         els.videoPip.classList.remove("pip-hidden");
         await els.localVideo.play().catch(() => {});
 
@@ -2912,6 +3271,15 @@
         videoFrameMetadata = sampler.metadata();
         state.frameSampler = null;
       }
+      if (userAudioBlob && userAudioBlob.size <= 44) {
+        userAudioBlob = null;
+      }
+      if (assistantAudioBlob && assistantAudioBlob.size <= 44) {
+        assistantAudioBlob = null;
+      }
+      if (videoFrameMetadata && !videoFrameMetadata.frame_count) {
+        videoFramesBlob = null;
+      }
       finalizeCurrentUserSpeechInterval();
 
       if (state.localStream) {
@@ -2930,7 +3298,7 @@
       if (!buildArchive) return null;
 
       const endedAtMs = Date.now();
-      const metadata = {
+      const metadata = compactObject({
         schema_version: "companion-thesis-realtime-v1",
         session_hash: state.sessionHash,
         started_at_ms: state.startedAtMs,
@@ -2940,9 +3308,10 @@
         end_reason: endReason,
         archive_audio_enabled: state.archiveAudioEnabled,
         archive_video_enabled: state.archiveVideoEnabled,
-        user_audio_sample_rate: userSampleRate,
+        user_audio_sample_rate: userAudioBlob ? userSampleRate : null,
         user_audio_format: userAudioBlob ? "wav_pcm_s16le_mono" : null,
-        assistant_audio_sample_rate: assistantSampleRate,
+        assistant_audio_sample_rate: assistantAudioBlob ? assistantSampleRate : null,
+        assistant_audio_format: assistantAudioBlob ? "wav_pcm_s16le_mono" : null,
         user_speech_interval_count: state.userSpeechIntervals.length,
         user_speech_interval_source: "realtime.input_audio_buffer.speech_started_stopped",
         user_speech_interval_timebase: "seconds_since_session_started_at_ms",
@@ -2957,10 +3326,10 @@
         video_frame_jpeg_quality: videoFrameMetadata?.jpeg_quality || null,
         video_frame_count: videoFrameMetadata?.frame_count || 0,
         video_frame_naming: videoFramesBlob ? "frame_000001.jpg" : null,
-        video_frames_file: videoFramesBlob ? "video_frames.zip" : null,
-        user_audio_file: userAudioBlob ? "user_audio.wav" : null,
-        assistant_audio_file: assistantAudioBlob ? "assistant_audio.wav" : null,
-      };
+        video_frames_file: videoFramesBlob ? "media/video_frames.zip" : null,
+        user_audio_file: userAudioBlob ? "media/user_audio.wav" : null,
+        assistant_audio_file: assistantAudioBlob ? "media/assistant_audio.wav" : null,
+      });
       const transcript = {
         schema_version: "companion-thesis-transcript-v1",
         session_hash: state.sessionHash,
@@ -2973,7 +3342,6 @@
       return {
         metadataBlob: jsonBlob(metadata),
         transcriptBlob: jsonBlob(transcript),
-        transcriptTextBlob: new Blob([state.transcriptLines.join("\n")], { type: "text/plain;charset=utf-8" }),
         userAudioBlob,
         assistantAudioBlob,
         videoFramesBlob,
@@ -2986,7 +3354,6 @@
       formData.append("session_hash", state.sessionHash);
       formData.append("metadata_file", archive.metadataBlob, "metadata.json");
       formData.append("transcript_file", archive.transcriptBlob, "transcript.json");
-      formData.append("transcript_text_file", archive.transcriptTextBlob, "transcript.txt");
       if (archive.userAudioBlob) {
         formData.append("user_audio_file", archive.userAudioBlob, "user_audio.wav");
       }
@@ -3098,23 +3465,14 @@
         setNotice("上傳完成，憂鬱偵測正在背景執行。完成後會在這裡更新摘要。");
         return false;
       }
-      if (status === "ok") {
-        renderDepressionResult(data);
-        setStatus("已上傳", { force: true });
-        const score = Number(data.depression_total_score);
-        const scoreText = Number.isFinite(score) ? score.toFixed(1) : "-";
-        const binaryText = data.depression_binary === true
-          ? "達憂鬱篩檢門檻"
-          : data.depression_binary === false
-            ? "未達憂鬱篩檢門檻"
-            : "二分類未知";
-        const hardWarnings = data?.depression_result?.metadata?.hard_warnings;
-        const warningText = Array.isArray(hardWarnings) && hardWarnings.length
-          ? ` 注意：${hardWarnings.map((warning) => warning?.message || warning?.code || "method warning").join("；")}`
-          : "";
-        setNotice(`上傳完成。憂鬱偵測完成：PHQ-8 估計總分 ${scoreText}，${binaryText}。${warningText}`);
-        return true;
-      }
+          if (status === "ok") {
+            renderDepressionResult(data);
+            setStatus("已上傳", { force: true });
+            const score = Number(data.depression_total_score);
+            const scoreText = Number.isFinite(score) ? score.toFixed(1) : "-";
+            setNotice(`上傳完成。憂鬱偵測完成：PHQ-8 估計總分 ${scoreText}。`);
+            return true;
+          }
       if (status === "error") {
         showDepressionMessage(
           "評估失敗",
@@ -3142,10 +3500,56 @@
       return false;
     }
 
-    function openDepressionResult() {
-      if (!state.depressionResultView || state.depressionResultView === "idle") return;
-      els.depressionResultBackdrop.hidden = false;
-    }
+        function setDepressionReturnTarget() {
+          const panel = els.depressionResultBackdrop.querySelector(".assessment-panel");
+          const button = els.depressionResultButton;
+          if (!panel || !button || button.classList.contains("hidden")) {
+            els.depressionResultBackdrop.style.setProperty("--assessment-close-x", "0px");
+            els.depressionResultBackdrop.style.setProperty("--assessment-close-y", "80px");
+            els.depressionResultBackdrop.style.setProperty("--assessment-close-scale", "0.16");
+            return;
+          }
+
+          const panelRect = panel.getBoundingClientRect();
+          const buttonRect = button.getBoundingClientRect();
+          if (!panelRect.width || !panelRect.height || !buttonRect.width || !buttonRect.height) return;
+
+          const panelCenterX = panelRect.left + panelRect.width / 2;
+          const panelCenterY = panelRect.top + panelRect.height / 2;
+          const buttonCenterX = buttonRect.left + buttonRect.width / 2;
+          const buttonCenterY = buttonRect.top + buttonRect.height / 2;
+          const scale = Math.max(0.08, Math.min(0.18, buttonRect.width / panelRect.width));
+
+          els.depressionResultBackdrop.style.setProperty(
+            "--assessment-close-x",
+            `${buttonCenterX - panelCenterX}px`
+          );
+          els.depressionResultBackdrop.style.setProperty(
+            "--assessment-close-y",
+            `${buttonCenterY - panelCenterY}px`
+          );
+          els.depressionResultBackdrop.style.setProperty("--assessment-close-scale", String(scale));
+        }
+
+        function clearDepressionReturnTarget() {
+          els.depressionResultBackdrop.style.removeProperty("--assessment-close-x");
+          els.depressionResultBackdrop.style.removeProperty("--assessment-close-y");
+          els.depressionResultBackdrop.style.removeProperty("--assessment-close-scale");
+        }
+
+        function openDepressionResult() {
+          if (!state.depressionResultView || state.depressionResultView === "idle") return;
+          if (state.depressionCloseTimer) {
+            window.clearTimeout(state.depressionCloseTimer);
+            state.depressionCloseTimer = null;
+          }
+          clearDepressionReturnTarget();
+          els.depressionResultBackdrop.hidden = false;
+          els.depressionResultBackdrop.classList.remove("is-closing");
+          window.requestAnimationFrame(() => {
+            els.depressionResultBackdrop.classList.add("is-open");
+          });
+        }
 
     function handleDepressionResultButton() {
       if (
@@ -3160,22 +3564,40 @@
       openDepressionResult();
     }
 
-    function closeDepressionResult() {
-      els.depressionResultBackdrop.hidden = true;
-    }
+        function closeDepressionResult() {
+          if (els.depressionResultBackdrop.hidden) return;
+          if (state.depressionCloseTimer) {
+            window.clearTimeout(state.depressionCloseTimer);
+            state.depressionCloseTimer = null;
+          }
+          setDepressionReturnTarget();
+          els.depressionResultBackdrop.classList.remove("is-open");
+          els.depressionResultBackdrop.classList.add("is-closing");
+          state.depressionCloseTimer = window.setTimeout(() => {
+            els.depressionResultBackdrop.hidden = true;
+            els.depressionResultBackdrop.classList.remove("is-closing");
+            clearDepressionReturnTarget();
+            state.depressionCloseTimer = null;
+          }, DEPRESSION_MODAL_CLOSE_MS);
+        }
 
     function showDepressionLoading(open = true) {
       state.depressionResultView = "loading";
       state.depressionResultData = null;
       els.depressionResultButton.classList.remove("hidden");
       els.depressionResultTitle.textContent = "PHQ-8 多模態評估";
-      els.depressionResultSubtitle.textContent = "DynRAG retrieval 與八個 aspect 推理進行中";
+      els.depressionResultSubtitle.textContent = "";
       els.depressionResultBody.innerHTML = `
-        <div class="assessment-loading">
-          <div>
-            <div class="assessment-spinner" aria-hidden="true"></div>
-            <h3>正在分析這段對話</h3>
-            <p>系統正在建立 personal aspect query、檢索 participant transcript，並整合文字、音訊與影像特徵。完成後會自動更新。</p>
+        <div class="assessment-loading" role="status" aria-label="憂鬱偵測分析中">
+          <div class="assessment-loading-shell">
+            <div class="depression-loading-animation" aria-hidden="true">
+              <span class="depression-loading-core">${depressionIcon("activity")}</span>
+              <span class="depression-loading-ring"></span>
+            </div>
+            <div class="assessment-loading-copy">
+              <h3>正在分析</h3>
+              <p>整理本次對話、語音與影像訊號</p>
+            </div>
           </div>
         </div>
       `;
@@ -3189,7 +3611,7 @@
       els.depressionResultTitle.textContent = title;
       els.depressionResultSubtitle.textContent = "本次評估沒有可顯示的結果";
       els.depressionResultBody.innerHTML = `
-        <div class="assessment-loading">
+        <div class="assessment-message">
           <div>
             <h3>${escapeHtml(title)}</h3>
             <p>${escapeHtml(message || "")}</p>
@@ -3204,27 +3626,46 @@
       state.depressionResultView = "retry";
     }
 
-    function displayScore(value, digits = 1) {
-      if (value === null || value === undefined || value === "") return "-";
-      const number = Number(value);
-      return Number.isFinite(number) ? number.toFixed(digits) : "-";
-    }
-
-    function formatRetrievedUtterances(rows) {
+        function displayScore(value, digits = 1) {
+          if (value === null || value === undefined || value === "") return "-";
+          const number = Number(value);
+          return Number.isFinite(number) ? number.toFixed(digits) : "-";
+        }
+        function depressionIcon(name) {
+          const icons = {
+            sparkles: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.7 5.1L19 10l-5.3 1.9L12 17l-1.7-5.1L5 10l5.3-1.9L12 3z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"></path></svg>',
+            chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"></path><path d="M4 19h16"></path><path d="M8 16v-5"></path><path d="M12 16V8"></path><path d="M16 16v-7"></path></svg>',
+            target: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M2 12h3"></path><path d="M19 12h3"></path></svg>',
+            moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 14.6A8 8 0 0 1 9.4 3.8 8.5 8.5 0 1 0 20.2 14.6z"></path></svg>',
+            battery: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="16" height="10" rx="2"></rect><path d="M21 11v2"></path><path d="M7 11h4"></path></svg>',
+            utensils: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3v8"></path><path d="M8 3v8"></path><path d="M4 7h4"></path><path d="M6 11v10"></path><path d="M17 3v18"></path><path d="M14 3c0 5 6 5 6 0"></path></svg>',
+            heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.2 5.2 0 0 0-7.4 0L12 6l-1.4-1.4a5.2 5.2 0 1 0-7.4 7.4L12 20.8l8.8-8.8a5.2 5.2 0 0 0 0-7.4z"></path><path d="M8 12h2l1-2 2 4 1-2h2"></path></svg>',
+            focus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3"></path><path d="M16 4h3a1 1 0 0 1 1 1v3"></path><path d="M20 16v3a1 1 0 0 1-1 1h-3"></path><path d="M8 20H5a1 1 0 0 1-1-1v-3"></path><circle cx="12" cy="12" r="3"></circle></svg>',
+            activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-6 4 12 2-6h6"></path></svg>',
+            search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>',
+            quote: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7H5v4h4v6H3v-6a4 4 0 0 1 4-4h2z"></path><path d="M21 7h-4v4h4v6h-6v-6a4 4 0 0 1 4-4h2z"></path></svg>',
+            brain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4a3 3 0 0 0-3 3v1a4 4 0 0 0 0 8v1a3 3 0 0 0 5 2.2"></path><path d="M15 4a3 3 0 0 1 3 3v1a4 4 0 0 1 0 8v1a3 3 0 0 1-5 2.2"></path><path d="M12 5v14"></path><path d="M8 10h3"></path><path d="M13 14h3"></path></svg>'
+          };
+          return icons[name] || icons.sparkles;
+        }
+        function depressionAspectIcon(index) {
+          return ["sparkles", "heart", "moon", "battery", "utensils", "target", "focus", "activity"][index] || "sparkles";
+        }
+        function formatRetrievedUtterances(rows) {
       if (!Array.isArray(rows) || !rows.length) {
-        return '<p>沒有 retrieved transcript。</p>';
+            return '<p>沒有檢索到可顯示的語句。</p>';
       }
       return `<div class="retrieved-list">${rows.map((row, index) => {
         const item = row && typeof row === "object" ? row : { text: String(row || "") };
         const start = Number(item.start);
         const end = Number(item.end);
-        const time = Number.isFinite(start) && Number.isFinite(end)
-          ? `${start.toFixed(2)}s - ${end.toFixed(2)}s`
-          : `Utterance ${item.index || index + 1}`;
-        const retrievalScore = Number(item.score);
-        const score = Number.isFinite(retrievalScore)
-          ? ` · retrieval ${retrievalScore.toFixed(3)}`
-          : "";
+            const time = Number.isFinite(start) && Number.isFinite(end)
+              ? `${start.toFixed(2)}s - ${end.toFixed(2)}s`
+              : `語句 ${item.index || index + 1}`;
+            const retrievalScore = Number(item.score);
+            const score = Number.isFinite(retrievalScore)
+              ? ` · 檢索 ${retrievalScore.toFixed(3)}`
+              : "";
         return `
           <div class="retrieved-row">
             <span class="retrieved-meta">${escapeHtml(time + score)}</span>
@@ -3236,76 +3677,72 @@
 
     function renderDepressionResult(data) {
       const result = data?.depression_result || {};
-      const aspects = Array.isArray(result.aspects) ? result.aspects : [];
-      const groundTruth = result.ground_truth || {};
-      const predictedTotal = result.total_score ?? data.depression_total_score;
-      const groundTruthTotal = groundTruth.total_score ?? data.ground_truth_total_score;
-      const predictedBinary = result.binary_depression ?? data.depression_binary;
-      const warnings = Array.isArray(result?.metadata?.hard_warnings)
-        ? result.metadata.hard_warnings
-        : [];
+          const aspects = Array.isArray(result.aspects) ? result.aspects : [];
+          const groundTruth = result.ground_truth || {};
+          const predictedTotal = result.total_score ?? data.depression_total_score;
+          const groundTruthTotal = groundTruth.total_score ?? data.ground_truth_total_score;
 
       state.depressionResultView = "result";
       state.depressionResultData = data;
       els.depressionResultButton.classList.remove("hidden");
       els.depressionResultTitle.textContent = "PHQ-8 多模態評估";
-      els.depressionResultSubtitle.textContent = `Run ${data.run_id || state.depressionRunId || "-"}`;
+      els.depressionResultSubtitle.textContent = "";
 
-      const warningHtml = warnings.length
-        ? `<div class="assessment-warning">${warnings.map((warning) => escapeHtml(
-            warning?.message || warning?.code || "method warning"
-          )).join("<br>")}</div>`
-        : "";
-      const aspectHtml = aspects.map((aspect, index) => {
-        const prediction = displayScore(aspect.prediction);
-        const truth = displayScore(aspect.ground_truth, 0);
-        const rationale = aspect.generated_rationale || aspect.generation || "沒有推理內容。";
-        return `
-          <details class="aspect-card" ${index === 0 ? "open" : ""}>
-            <summary>
-              <span class="aspect-index">${index + 1}</span>
-              <span class="aspect-title">
-                <strong>${escapeHtml(aspect.aspect || aspect.aspect_key || `Aspect ${index + 1}`)}</strong>
-                <span>${escapeHtml(aspect.clinical_description || aspect.aspect_key || "")}</span>
-              </span>
-              <span class="aspect-score">預測 ${prediction}</span>
-              <span class="aspect-score ground-truth">GT ${truth}</span>
-            </summary>
-            <div class="aspect-detail">
-              <section class="aspect-block">
-                <h4>Personal aspect query</h4>
-                <p>${escapeHtml(aspect.retrieval_query || "沒有 query。")}</p>
-              </section>
-              <section class="aspect-block">
-                <h4>Retrieved participant transcript</h4>
-                ${formatRetrievedUtterances(aspect.retrieved_utterances)}
-              </section>
-              <section class="aspect-block">
-                <h4>Model rationale</h4>
-                <p>${escapeHtml(rationale)}</p>
-              </section>
-            </div>
+          const aspectHtml = aspects.map((aspect, index) => {
+            const prediction = displayScore(aspect.prediction);
+            const truth = displayScore(aspect.ground_truth, 0);
+            const rationale = aspect.generated_rationale || aspect.generation || "沒有推理內容。";
+            const tone = index % 8;
+            return `
+              <details class="aspect-card aspect-tone-${tone}" ${index === 0 ? "open" : ""}>
+                <summary>
+                  <span class="aspect-icon">${depressionIcon(depressionAspectIcon(index))}</span>
+                  <span class="aspect-title">
+                    <span class="aspect-kicker">面向 ${index + 1}</span>
+                    <strong>${escapeHtml(aspect.aspect || aspect.aspect_key || `面向 ${index + 1}`)}</strong>
+                    <span>${escapeHtml(aspect.clinical_description || aspect.aspect_key || "")}</span>
+                  </span>
+                  <span class="aspect-score-stack">
+                    <span class="aspect-score">${depressionIcon("chart")}預測 ${prediction}</span>
+                    <span class="aspect-score ground-truth">${depressionIcon("target")}標註 ${truth}</span>
+                  </span>
+                </summary>
+                <div class="aspect-detail">
+                  <section class="aspect-block">
+                    <h4>${depressionIcon("search")}個人化面向查詢</h4>
+                    <p>${escapeHtml(aspect.retrieval_query || "沒有查詢內容。")}</p>
+                  </section>
+                  <section class="aspect-block">
+                    <h4>${depressionIcon("quote")}檢索到的使用者語句</h4>
+                    ${formatRetrievedUtterances(aspect.retrieved_utterances)}
+                  </section>
+                  <section class="aspect-block">
+                    <h4>${depressionIcon("brain")}模型推理</h4>
+                    <p>${escapeHtml(rationale)}</p>
+                  </section>
+                </div>
           </details>
         `;
       }).join("");
 
-      els.depressionResultBody.innerHTML = `
-        <div class="assessment-summary">
-          <div class="assessment-metric">
-            <small>Predicted PHQ-8</small>
-            <strong>${displayScore(predictedTotal)} / 24</strong>
-          </div>
-          <div class="assessment-metric">
-            <small>Ground truth</small>
-            <strong>${displayScore(groundTruthTotal, 0)} / 24</strong>
-          </div>
-          <div class="assessment-metric">
-            <small>Screening result</small>
-            <strong>${predictedBinary === true ? "陽性" : predictedBinary === false ? "陰性" : "-"}</strong>
-          </div>
-        </div>
-        ${warningHtml}
-        <div class="assessment-aspects">${aspectHtml || "<p>沒有 aspect 結果。</p>"}</div>
+          els.depressionResultBody.innerHTML = `
+            <div class="assessment-summary">
+              <div class="assessment-metric predicted">
+                <span class="metric-icon">${depressionIcon("chart")}</span>
+                <span class="assessment-metric-content">
+                <small>預測 PHQ-8</small>
+                <strong>${displayScore(predictedTotal)} / 24</strong>
+                </span>
+              </div>
+              <div class="assessment-metric truth">
+                <span class="metric-icon">${depressionIcon("target")}</span>
+                <span class="assessment-metric-content">
+                <small>標註總分</small>
+                <strong>${displayScore(groundTruthTotal, 0)} / 24</strong>
+                </span>
+              </div>
+            </div>
+            <div class="assessment-aspects">${aspectHtml || "<p>沒有面向結果。</p>"}</div>
       `;
       openDepressionResult();
     }
@@ -3321,8 +3758,8 @@
       state.depressionPollAttempts = 0;
       state.depressionResultData = null;
       state.depressionResultView = "idle";
-      els.depressionResultButton.classList.add("hidden");
       closeDepressionResult();
+      els.depressionResultButton.classList.add("hidden");
       state.stopping = false;
       state.microphoneMuted = false;
       setAssistantAudioActive(false, { immediate: true });
@@ -3345,7 +3782,7 @@
     async function restartCurrentUser() {
       if (state.stopping || (state.sessionPhase !== SESSION_PHASE.ENDED && state.sessionPhase !== SESSION_PHASE.ERROR)) return;
       const user = state.selectedUser;
-      if (!user?.form_hash) {
+      if (!userSessionHash(user)) {
         resetToSelection();
         return;
       }
@@ -3526,8 +3963,8 @@
 
       const threshold = Math.max(
         BARGE_IN_VOICE_THRESHOLD,
-        state.assistantEchoFloor * 2.5,
-        remoteVolume * 0.18
+        state.assistantEchoFloor * 2.0,
+        remoteVolume * 0.12
       );
       if (userVolume >= threshold) {
         state.bargeInVoiceFrames += 1;
@@ -3719,6 +4156,12 @@
 
     function jsonBlob(value) {
       return new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" });
+    }
+
+    function compactObject(value) {
+      return Object.fromEntries(
+        Object.entries(value).filter(([, item]) => item !== null && item !== undefined)
+      );
     }
 
     function parseJsonObject(value) {

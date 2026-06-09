@@ -8,10 +8,24 @@ from pathlib import Path
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
 
+try:
+    from .session_artifacts import (
+        artifact_read_path,
+        artifact_record,
+        artifact_write_path,
+        ensure_artifact_parent,
+    )
+except ImportError:
+    from session_artifacts import (
+        artifact_read_path,
+        artifact_record,
+        artifact_write_path,
+        ensure_artifact_parent,
+    )
+
 
 PREPROCESSING_FILENAME = "depression_preprocessing.json"
 TRANSLATED_TRANSCRIPT_FILENAME = "transcript_depression_english.json"
-TRANSLATED_TRANSCRIPT_TEXT_FILENAME = "transcript_depression_english.txt"
 DEFAULT_TRANSLATION_MODEL = "gpt-5.4-mini"
 CJK_RE = re.compile(r"[\u3400-\u9fff]")
 
@@ -24,6 +38,7 @@ def read_json_file(path: Path, default=None):
 
 
 def write_json_file(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -178,29 +193,23 @@ def translate_user_utterance_chunk(
     return translated
 
 
-def build_depression_transcript_text(transcript: dict) -> str:
-    lines = []
-    for event in transcript.get("events") or []:
-        if not isinstance(event, dict):
-            continue
-        speaker = str(event.get("speaker") or "").strip().lower()
-        text = " ".join(str(event.get("text") or "").split())
-        if speaker in {"user", "assistant"} and text:
-            lines.append(f"{speaker.upper()}: {text}")
-    return "\n".join(lines)
-
-
 def prepare_depression_translation_artifacts(
     session_dir: Path,
     transcript: dict | None,
 ) -> tuple[dict, list[dict]]:
     session_dir = Path(session_dir)
-    preprocessing_path = session_dir / PREPROCESSING_FILENAME
-    translated_path = session_dir / TRANSLATED_TRANSCRIPT_FILENAME
-    existing = read_json_file(preprocessing_path, default={})
+    preprocessing_path = ensure_artifact_parent(
+        artifact_write_path(session_dir, PREPROCESSING_FILENAME)
+    )
+    translated_path = ensure_artifact_parent(
+        artifact_write_path(session_dir, TRANSLATED_TRANSCRIPT_FILENAME)
+    )
+    existing_preprocessing_path = artifact_read_path(session_dir, PREPROCESSING_FILENAME)
+    existing_translated_path = artifact_read_path(session_dir, TRANSLATED_TRANSCRIPT_FILENAME)
+    existing = read_json_file(existing_preprocessing_path, default={})
     translation = existing.get("translation") if isinstance(existing, dict) else None
     if (
-        translated_path.is_file()
+        existing_translated_path.is_file()
         and isinstance(translation, dict)
         and translation.get("status") == "ok"
     ):
@@ -220,13 +229,7 @@ def prepare_depression_translation_artifacts(
     created_files: list[dict] = []
 
     def record(path: Path, field_name: str) -> None:
-        created_files.append(
-            {
-                "field_name": field_name,
-                "filename": path.name,
-                "path": str(path),
-            }
-        )
+        created_files.append(artifact_record(session_dir, path, field_name))
 
     def finish(status: str, message: str = "") -> tuple[dict, list[dict]]:
         preprocessing["translation"]["status"] = status
@@ -285,16 +288,10 @@ def prepare_depression_translation_artifacts(
         write_json_file(translated_path, translated_transcript)
         record(translated_path, "depression_transcript_file")
 
-        translated_text_path = session_dir / TRANSLATED_TRANSCRIPT_TEXT_FILENAME
-        translated_text_path.write_text(
-            build_depression_transcript_text(translated_transcript),
-            encoding="utf-8",
-        )
-        record(translated_text_path, "depression_transcript_text_file")
         preprocessing["translation"].update(
             {
                 "status": "ok",
-                "artifact": TRANSLATED_TRANSCRIPT_FILENAME,
+                "artifact": translated_path.relative_to(session_dir).as_posix(),
                 "user_utterance_count": len(rows),
                 "message": "Translated user utterances for depression detection.",
             }

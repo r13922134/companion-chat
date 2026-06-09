@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import sqlite3
 import wave
 from pathlib import Path
@@ -12,11 +13,13 @@ from app.depression_detector import (
     DEFAULT_CONFIG_PATH,
     DepressionDetectionError,
     PARTICIPANT_TRANSCRIPT_FILENAME,
+    PARTICIPANT_UTTERANCES_FILENAME,
     RealtimeDepressionDetector,
     RealtimeRunInput,
     VENDOR_ROOT,
     _ensure_vendor_import_path,
     _load_checkpoint_or_fail,
+    build_modality_quality_flags,
     build_user_only_dialogue,
     effective_realtime_participant_interval_rows,
     missing_modality_feature,
@@ -24,6 +27,7 @@ from app.depression_detector import (
     queue_realtime_depression_detection,
     realtime_participant_interval_rows,
     write_participant_interval_transcript,
+    write_participant_utterances_jsonl,
 )
 from app.depression_aspect_retrieval import (
     AspectRetrievalConfig,
@@ -35,15 +39,21 @@ from app.depression_preprocessing import (
     PREPROCESSING_FILENAME,
     prepare_depression_translation_artifacts,
 )
+from app.realtime_analytics import build_realtime_analytics_snapshot
+from app.session_artifacts import artifact_relative_path
 from app.storage import (
+    attach_latest_google_form_response_to_metadata,
     claim_next_depression_job,
     depression_queue_counts,
     enqueue_depression_job,
     finish_depression_job,
     get_depression_job,
     get_realtime_session_run,
+    google_form_account_hash,
     heartbeat_depression_job,
     initialize_database,
+    insert_google_form_response,
+    list_google_form_response_summaries,
     update_realtime_session_run_depression,
     upsert_realtime_session_run,
 )
@@ -171,8 +181,42 @@ def test_realtime_participant_interval_csv_uses_user_speech_times(tmp_path: Path
     assert rows == [(1.25, 2.75, "I cannot sleep")]
     assert path is not None
     assert path.read_text(encoding="utf-8").splitlines() == [
-        "Start_Time,End_Time,Text",
-        "1.250,2.750,I cannot sleep",
+        "utterance_index,Start_Time,End_Time,Text",
+        "1,1.250,2.750,I cannot sleep",
+    ]
+
+
+def test_participant_utterance_artifact_is_structured(tmp_path: Path) -> None:
+    path = write_participant_utterances_jsonl(
+        tmp_path / PARTICIPANT_UTTERANCES_FILENAME,
+        [
+            TranscriptUtterance(1, 1.25, 2.75, "I cannot sleep"),
+            TranscriptUtterance(2, 3.0, 4.0, "I feel tired"),
+        ],
+    )
+
+    assert path is not None
+    rows = [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert rows == [
+        {
+            "utterance_index": 1,
+            "speaker": "participant",
+            "source_speaker": "user",
+            "Start_Time": 1.25,
+            "End_Time": 2.75,
+            "Text": "I cannot sleep",
+        },
+        {
+            "utterance_index": 2,
+            "speaker": "participant",
+            "source_speaker": "user",
+            "Start_Time": 3.0,
+            "End_Time": 4.0,
+            "Text": "I feel tired",
+        },
     ]
 
 
@@ -235,6 +279,40 @@ def test_missing_audio_and_video_are_valid_zero_fill_inputs(tmp_path: Path) -> N
     assert tuple(video.shape) == (1, 2048)
     assert int(torch.count_nonzero(audio).item()) == 0
     assert int(torch.count_nonzero(video).item()) == 0
+
+
+def test_modality_quality_flags_mark_incomplete_predictions() -> None:
+    flags = build_modality_quality_flags(
+        audio_zero_fill_reason="missing_user_audio_file",
+        video_zero_fill_reason=None,
+        audio_frame_count=0,
+        audio_frame_count_before_sampling=0,
+        audio_downsampled=False,
+        video_frame_count=8192,
+        video_frame_count_before_sampling=9000,
+        video_downsampled=True,
+        participant_speech_seconds=310.5,
+        speech_interval_count=85,
+        text_utterance_count=120,
+        candidate_text_utterance_count=44,
+        video_capture_frame_count=9000,
+    )
+
+    assert flags["audio_missing"] is True
+    assert flags["video_missing"] is False
+    assert flags["audio_frame_count"] == 0
+    assert flags["video_frame_count"] == 8192
+    assert flags["video_downsampled"] is True
+    assert flags["participant_speech_seconds"] == 310.5
+    assert flags["speech_interval_count"] == 85
+    assert flags["text_utterance_count"] == 120
+    assert flags["candidate_text_utterance_count"] == 44
+    assert flags["incomplete_modalities"] == ["audio"]
+    assert flags["prediction_is_based_on_incomplete_modalities"] is True
+    assert (
+        flags["incomplete_modalities_message"]
+        == "prediction is based on incomplete modalities"
+    )
 
 
 def test_hubert_extractor_is_reused_across_realtime_runs(
@@ -359,8 +437,12 @@ def test_english_translation_preprocessing_runs_in_worker_without_network(
     )
 
     assert preprocessing["translation"]["status"] == "skipped_already_english"
-    assert (tmp_path / PREPROCESSING_FILENAME).is_file()
+    expected_path = tmp_path / artifact_relative_path(PREPROCESSING_FILENAME)
+    assert expected_path.is_file()
     assert [row["filename"] for row in files] == [PREPROCESSING_FILENAME]
+    assert [row["relative_path"] for row in files] == [
+        artifact_relative_path(PREPROCESSING_FILENAME).as_posix()
+    ]
 
 
 def test_feedback_server_does_not_queue_depression_prediction() -> None:
@@ -418,6 +500,557 @@ def test_depression_columns_update_roundtrip(tmp_path: Path) -> None:
     }
     assert row["ground_truth_total_score"] == 8
     assert row["ground_truth_binary"] is False
+
+
+def test_realtime_analytics_snapshot_includes_phq_and_predictions(tmp_path: Path) -> None:
+    db_path = tmp_path / "app.sqlite3"
+    initialize_database(db_path)
+    email = "test@example.com"
+    account_hash = google_form_account_hash(email)
+    phq8 = {
+        "scale": "PHQ-8",
+        "total_score": 6,
+        "answered_count": 8,
+        "max_score": 24,
+        "item_scores": {
+            "1": {"question": "1. interest", "answer": "好幾天", "score": 1},
+            "2": {"question": "2. mood", "answer": "超過一半以上的天數", "score": 2},
+            "3": {"question": "3. sleep", "answer": "完全沒有", "score": 0},
+            "4": {"question": "4. energy", "answer": "幾乎每天", "score": 3},
+            "5": {"question": "5. appetite", "answer": "完全沒有", "score": 0},
+            "6": {"question": "6. failure", "answer": "完全沒有", "score": 0},
+            "7": {"question": "7. focus", "answer": "完全沒有", "score": 0},
+            "8": {"question": "8. movement", "answer": "完全沒有", "score": 0},
+        },
+    }
+    insert_google_form_response(
+        db_path,
+        {
+            "form_hash": "form123",
+            "form_dir_name": "20260609_form123",
+            "form_title": "PHQ-8",
+            "respondent_email": email,
+            "submitted_at": "2026-06-09T01:00:00+08:00",
+            "received_at": "2026-06-09T01:00:10+08:00",
+            "name": "Test User",
+            "age": "35",
+            "date_prefix": "2026-06-09",
+            "fields": {},
+            "phq8": phq8,
+        },
+    )
+    upsert_realtime_session_run(
+        db_path,
+        {
+            "session_hash": account_hash,
+            "run_id": "20260609_010203_000",
+            "session_dir_name": f"{account_hash}/20260609_010203_000",
+            "started_at": "2026-06-09T01:02:03+08:00",
+            "uploaded_at": "2026-06-09T01:03:03+08:00",
+            "metadata": {
+                "selected_user": {
+                    "account_hash": account_hash,
+                    "session_hash": account_hash,
+                    "respondent_email": email,
+                    "form_hash": "form123",
+                    "name": "Test User",
+                    "age": "35",
+                    "phq8": phq8,
+                }
+            },
+            "ground_truth_total_score": 6,
+            "ground_truth_binary": False,
+        },
+    )
+    update_realtime_session_run_depression(
+        db_path,
+        account_hash,
+        "20260609_010203_000",
+        {
+            "status": "ok",
+            "total_score": 8.25,
+            "binary": False,
+            "result": {
+                "status": "ok",
+                "total_score": 8.25,
+                "aspects": [
+                    {
+                        "aspect_index": 0,
+                        "clinical_description": "Little interest",
+                        "prediction": 1.5,
+                        "ground_truth": 1,
+                        "prediction_source": "test",
+                    }
+                ],
+            },
+            "completed_at": "2026-06-09T01:04:03+08:00",
+        },
+    )
+
+    snapshot = build_realtime_analytics_snapshot(db_path)
+
+    assert snapshot["summary"]["user_count"] == 1
+    assert snapshot["summary"]["run_count"] == 1
+    assert snapshot["summary"]["mean_phq8_score"] == 6
+    assert snapshot["summary"]["mean_prediction_score"] == 8.25
+    assert snapshot["summary"]["mean_abs_error"] == 2.25
+    assert snapshot["users"][0]["phq8"]["items"][0] == {
+        "index": 1,
+        "question": "1. interest",
+        "answer": "好幾天",
+        "score": 1,
+    }
+    assert snapshot["runs"][0]["prediction"] == 8.25
+    assert snapshot["aspect_summary"][0]["mean_abs_error"] == 0.5
+
+
+def test_google_form_responses_group_same_email_as_one_account(tmp_path: Path) -> None:
+    db_path = tmp_path / "app.sqlite3"
+    initialize_database(db_path)
+    email = "Student@Example.COM"
+    account_hash = google_form_account_hash(email)
+
+    older_phq8 = {
+        "scale": "PHQ-8",
+        "total_score": 4,
+        "answered_count": 8,
+        "max_score": 24,
+        "item_scores": {},
+    }
+    latest_phq8 = {
+        "scale": "PHQ-8",
+        "total_score": 12,
+        "answered_count": 8,
+        "max_score": 24,
+        "item_scores": {},
+    }
+    insert_google_form_response(
+        db_path,
+        {
+            "form_hash": "older_form",
+            "form_dir_name": "20260608_older_form",
+            "respondent_email": email,
+            "submitted_at": "2026-06-08T10:00:00+08:00",
+            "received_at": "2026-06-08T10:00:05+08:00",
+            "name": "Student",
+            "age": "20",
+            "date_prefix": "20260608",
+            "fields": {},
+            "phq8": older_phq8,
+        },
+    )
+    insert_google_form_response(
+        db_path,
+        {
+            "form_hash": "latest_form",
+            "form_dir_name": "20260610_latest_form",
+            "respondent_email": email,
+            "submitted_at": "2026-06-10T10:00:00+08:00",
+            "received_at": "2026-06-10T10:00:05+08:00",
+            "name": "Student",
+            "age": "21",
+            "date_prefix": "20260610",
+            "fields": {},
+            "phq8": latest_phq8,
+        },
+    )
+
+    users = list_google_form_response_summaries(db_path)
+
+    assert len(users) == 1
+    assert users[0]["account_hash"] == account_hash
+    assert users[0]["session_hash"] == account_hash
+    assert users[0]["respondent_email"] == "student@example.com"
+    assert users[0]["form_hash"] == "latest_form"
+    assert users[0]["form_count"] == 2
+    assert users[0]["age"] == "21"
+    assert users[0]["phq8_score"] == 12
+
+
+def test_google_form_response_requires_email(tmp_path: Path) -> None:
+    db_path = tmp_path / "app.sqlite3"
+    initialize_database(db_path)
+
+    with pytest.raises(ValueError, match="respondent_email is required"):
+        insert_google_form_response(
+            db_path,
+            {
+                "form_hash": "form_without_email",
+                "form_dir_name": "20260610_form_without_email",
+                "submitted_at": "2026-06-10T10:00:00+08:00",
+                "received_at": "2026-06-10T10:00:05+08:00",
+                "date_prefix": "20260610",
+                "fields": {},
+                "phq8": {},
+            },
+        )
+
+
+def test_initialize_database_deletes_legacy_google_forms_without_email(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE google_form_responses (
+                form_hash TEXT PRIMARY KEY,
+                form_dir_name TEXT NOT NULL,
+                form_title TEXT NOT NULL DEFAULT '',
+                form_id TEXT NOT NULL DEFAULT '',
+                response_id TEXT NOT NULL DEFAULT '',
+                submitted_at TEXT NOT NULL,
+                received_at TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                age TEXT NOT NULL DEFAULT '',
+                date_prefix TEXT NOT NULL,
+                fields_json TEXT NOT NULL,
+                phq8_json TEXT NOT NULL,
+                remote_addr TEXT,
+                user_agent TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO google_form_responses (
+                form_hash,
+                form_dir_name,
+                submitted_at,
+                received_at,
+                date_prefix,
+                fields_json,
+                phq8_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy_form",
+                "20260608_legacy_form",
+                "2026-06-08T10:00:00+08:00",
+                "2026-06-08T10:00:05+08:00",
+                "20260608",
+                "{}",
+                "{}",
+            ),
+        )
+
+    initialize_database(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM google_form_responses
+            """
+        ).fetchone()[0]
+
+    assert count == 0
+
+
+def test_initialize_database_rekeys_stale_account_hashes_by_email(tmp_path: Path) -> None:
+    db_path = tmp_path / "stale.sqlite3"
+    initialize_database(db_path)
+    email = "student@example.com"
+    expected_account_hash = google_form_account_hash(email)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO google_form_responses (
+                form_hash,
+                form_dir_name,
+                respondent_email,
+                account_hash,
+                submitted_at,
+                received_at,
+                date_prefix,
+                fields_json,
+                phq8_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "older_form",
+                "20260608_older_form",
+                email,
+                "older_form",
+                "2026-06-08T10:00:00+08:00",
+                "2026-06-08T10:00:05+08:00",
+                "20260608",
+                "{}",
+                '{"total_score":4}',
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO google_form_responses (
+                form_hash,
+                form_dir_name,
+                respondent_email,
+                account_hash,
+                submitted_at,
+                received_at,
+                date_prefix,
+                fields_json,
+                phq8_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "latest_form",
+                "20260610_latest_form",
+                email,
+                expected_account_hash,
+                "2026-06-10T10:00:00+08:00",
+                "2026-06-10T10:00:05+08:00",
+                "20260610",
+                "{}",
+                '{"total_score":12}',
+            ),
+        )
+
+    initialize_database(db_path)
+    users = list_google_form_response_summaries(db_path)
+
+    assert len(users) == 1
+    assert users[0]["account_hash"] == expected_account_hash
+    assert users[0]["form_hash"] == "latest_form"
+    assert users[0]["form_count"] == 2
+
+
+def test_latest_form_phq8_is_used_for_account_ground_truth(tmp_path: Path) -> None:
+    db_path = tmp_path / "app.sqlite3"
+    initialize_database(db_path)
+    email = "student@example.com"
+    account_hash = google_form_account_hash(email)
+    older_phq8 = {
+        "scale": "PHQ-8",
+        "total_score": 4,
+        "answered_count": 8,
+        "max_score": 24,
+        "item_scores": {
+            "1": {"question": "1. interest", "answer": "完全沒有", "score": 0},
+        },
+    }
+    latest_phq8 = {
+        "scale": "PHQ-8",
+        "total_score": 12,
+        "answered_count": 8,
+        "max_score": 24,
+        "item_scores": {
+            "1": {"question": "1. interest", "answer": "幾乎每天", "score": 3},
+        },
+    }
+    insert_google_form_response(
+        db_path,
+        {
+            "form_hash": "older_form",
+            "form_dir_name": "20260608_older_form",
+            "respondent_email": email,
+            "submitted_at": "2026-06-08T10:00:00+08:00",
+            "received_at": "2026-06-08T10:00:05+08:00",
+            "name": "Student",
+            "age": "20",
+            "date_prefix": "20260608",
+            "fields": {},
+            "phq8": older_phq8,
+        },
+    )
+    insert_google_form_response(
+        db_path,
+        {
+            "form_hash": "latest_form",
+            "form_dir_name": "20260610_latest_form",
+            "respondent_email": email,
+            "submitted_at": "2026-06-10T10:00:00+08:00",
+            "received_at": "2026-06-10T10:00:05+08:00",
+            "name": "Student",
+            "age": "21",
+            "date_prefix": "20260610",
+            "fields": {},
+            "phq8": latest_phq8,
+        },
+    )
+
+    metadata, changed = attach_latest_google_form_response_to_metadata(
+        db_path,
+        session_hash=account_hash,
+        metadata={
+            "selected_user": {
+                "respondent_email": email,
+                "form_hash": "older_form",
+                "phq8": older_phq8,
+            }
+        },
+    )
+
+    assert changed is True
+    assert metadata["selected_user"]["form_hash"] == "latest_form"
+    assert metadata["selected_user"]["session_hash"] == account_hash
+    assert metadata["selected_user"]["phq8"]["total_score"] == 12
+
+    upsert_realtime_session_run(
+        db_path,
+        {
+            "session_hash": account_hash,
+            "run_id": "20260610_101500_000",
+            "session_dir_name": f"{account_hash}/20260610_101500_000",
+            "started_at": "2026-06-10T10:15:00+08:00",
+            "uploaded_at": "2026-06-10T10:16:00+08:00",
+            "metadata": metadata,
+            "ground_truth_total_score": 12,
+            "ground_truth_binary": True,
+        },
+    )
+    update_realtime_session_run_depression(
+        db_path,
+        account_hash,
+        "20260610_101500_000",
+        {
+            "status": "ok",
+            "total_score": 8,
+            "binary": False,
+            "result": {
+                "status": "ok",
+                "total_score": 8,
+                "aspects": [
+                    {
+                        "aspect_index": 0,
+                        "clinical_description": "Little interest",
+                        "prediction": 1,
+                        "ground_truth": 3,
+                    }
+                ],
+            },
+            "completed_at": "2026-06-10T10:17:00+08:00",
+        },
+    )
+
+    snapshot = build_realtime_analytics_snapshot(db_path)
+
+    assert snapshot["summary"]["user_count"] == 1
+    assert snapshot["users"][0]["form_count"] == 2
+    assert snapshot["users"][0]["phq8"]["total_score"] == 12
+    assert snapshot["runs"][0]["user_key"] == account_hash
+    assert snapshot["runs"][0]["form_hash"] == "latest_form"
+    assert snapshot["runs"][0]["ground_truth"] == 12
+    assert snapshot["runs"][0]["abs_error"] == 4
+    assert snapshot["runs"][0]["aspect_predictions"][0]["ground_truth"] == 3
+    assert snapshot["runs"][0]["aspect_predictions"][0]["abs_error"] == 2
+
+
+def test_analytics_keeps_run_time_ground_truth_snapshot_after_new_form(tmp_path: Path) -> None:
+    db_path = tmp_path / "app.sqlite3"
+    initialize_database(db_path)
+    email = "student@example.com"
+    account_hash = google_form_account_hash(email)
+    older_phq8 = {
+        "scale": "PHQ-8",
+        "total_score": 4,
+        "answered_count": 8,
+        "max_score": 24,
+        "item_scores": {
+            "1": {"question": "1. interest", "answer": "完全沒有", "score": 0},
+        },
+    }
+    latest_phq8 = {
+        "scale": "PHQ-8",
+        "total_score": 12,
+        "answered_count": 8,
+        "max_score": 24,
+        "item_scores": {
+            "1": {"question": "1. interest", "answer": "幾乎每天", "score": 3},
+        },
+    }
+    insert_google_form_response(
+        db_path,
+        {
+            "form_hash": "older_form",
+            "form_dir_name": "20260608_older_form",
+            "respondent_email": email,
+            "submitted_at": "2026-06-08T10:00:00+08:00",
+            "received_at": "2026-06-08T10:00:05+08:00",
+            "name": "Student",
+            "age": "20",
+            "date_prefix": "20260608",
+            "fields": {},
+            "phq8": older_phq8,
+        },
+    )
+    old_metadata, changed = attach_latest_google_form_response_to_metadata(
+        db_path,
+        session_hash=account_hash,
+        metadata={
+            "selected_user": {
+                "respondent_email": email,
+                "form_hash": "older_form",
+                "phq8": older_phq8,
+            }
+        },
+    )
+    assert changed is True
+    assert old_metadata["selected_user"]["form_hash"] == "older_form"
+
+    upsert_realtime_session_run(
+        db_path,
+        {
+            "session_hash": account_hash,
+            "run_id": "20260608_101500_000",
+            "session_dir_name": f"{account_hash}/20260608_101500_000",
+            "started_at": "2026-06-08T10:15:00+08:00",
+            "uploaded_at": "2026-06-08T10:16:00+08:00",
+            "metadata": old_metadata,
+            "ground_truth_total_score": 4,
+            "ground_truth_binary": False,
+        },
+    )
+    update_realtime_session_run_depression(
+        db_path,
+        account_hash,
+        "20260608_101500_000",
+        {
+            "status": "ok",
+            "total_score": 8,
+            "binary": False,
+            "result": {
+                "status": "ok",
+                "total_score": 8,
+                "aspects": [
+                    {
+                        "aspect_index": 0,
+                        "clinical_description": "Little interest",
+                        "prediction": 1,
+                        "ground_truth": 0,
+                    }
+                ],
+            },
+            "completed_at": "2026-06-08T10:17:00+08:00",
+        },
+    )
+    insert_google_form_response(
+        db_path,
+        {
+            "form_hash": "latest_form",
+            "form_dir_name": "20260610_latest_form",
+            "respondent_email": email,
+            "submitted_at": "2026-06-10T10:00:00+08:00",
+            "received_at": "2026-06-10T10:00:05+08:00",
+            "name": "Student",
+            "age": "21",
+            "date_prefix": "20260610",
+            "fields": {},
+            "phq8": latest_phq8,
+        },
+    )
+
+    snapshot = build_realtime_analytics_snapshot(db_path)
+
+    assert snapshot["summary"]["user_count"] == 1
+    assert snapshot["users"][0]["form_count"] == 2
+    assert snapshot["users"][0]["phq8"]["total_score"] == 12
+    assert snapshot["runs"][0]["user_key"] == account_hash
+    assert snapshot["runs"][0]["form_hash"] == "older_form"
+    assert snapshot["runs"][0]["latest_form_hash"] == "latest_form"
+    assert snapshot["runs"][0]["phq8"]["total_score"] == 4
+    assert snapshot["runs"][0]["ground_truth"] == 4
+    assert snapshot["runs"][0]["abs_error"] == 4
+    assert snapshot["runs"][0]["aspect_predictions"][0]["ground_truth"] == 0
+    assert snapshot["runs"][0]["aspect_predictions"][0]["abs_error"] == 1
 
 
 def test_sqlite_depression_queue_claims_each_job_once(tmp_path: Path) -> None:

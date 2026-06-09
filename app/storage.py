@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import time
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -28,6 +29,22 @@ def connect_database(db_path: Path) -> sqlite3.Connection:
     return connection
 
 
+def normalize_respondent_email(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def google_form_account_hash(respondent_email: Any) -> str:
+    email = normalize_respondent_email(respondent_email)
+    if not email:
+        return ""
+    digest = hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
+    return f"acct_{digest}"
+
+
+def google_form_account_key(respondent_email: Any, fallback_form_hash: Any = "") -> str:
+    return google_form_account_hash(respondent_email) or str(fallback_form_hash or "").strip()
+
+
 def ensure_column(connection: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
     columns = {
         row["name"]
@@ -48,6 +65,8 @@ def initialize_database(db_path: Path) -> None:
                 form_title TEXT NOT NULL DEFAULT '',
                 form_id TEXT NOT NULL DEFAULT '',
                 response_id TEXT NOT NULL DEFAULT '',
+                respondent_email TEXT NOT NULL DEFAULT '',
+                account_hash TEXT NOT NULL DEFAULT '',
                 submitted_at TEXT NOT NULL,
                 received_at TEXT NOT NULL,
                 name TEXT NOT NULL DEFAULT '',
@@ -214,6 +233,51 @@ def initialize_database(db_path: Path) -> None:
         ensure_column(connection, "realtime_session_runs", "archive_manifest_json", "TEXT")
         ensure_column(connection, "realtime_session_runs", "ground_truth_total_score", "REAL")
         ensure_column(connection, "realtime_session_runs", "ground_truth_binary", "INTEGER")
+        ensure_column(
+            connection,
+            "google_form_responses",
+            "respondent_email",
+            "TEXT NOT NULL DEFAULT ''",
+        )
+        ensure_column(
+            connection,
+            "google_form_responses",
+            "account_hash",
+            "TEXT NOT NULL DEFAULT ''",
+        )
+        connection.execute(
+            """
+            DELETE FROM google_form_responses
+            WHERE respondent_email IS NULL OR trim(respondent_email) = ''
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_google_form_responses_account_received_at
+                ON google_form_responses(account_hash, received_at DESC, submitted_at DESC)
+            """
+        )
+        rows = connection.execute(
+            """
+            SELECT form_hash, respondent_email, account_hash
+            FROM google_form_responses
+            """
+        ).fetchall()
+        for row in rows:
+            account_hash = google_form_account_key(
+                row["respondent_email"],
+                row["form_hash"],
+            )
+            if account_hash == str(row["account_hash"] or ""):
+                continue
+            connection.execute(
+                """
+                UPDATE google_form_responses
+                SET account_hash = ?
+                WHERE form_hash = ?
+                """,
+                (account_hash, row["form_hash"]),
+            )
 
 
 def dump_json(value: Any) -> str:
@@ -230,6 +294,14 @@ def load_json(value: Optional[str], default: Any) -> Any:
 
 
 def insert_google_form_response(db_path: Path, record: dict[str, Any]) -> None:
+    form_hash = str(record.get("form_hash") or "").strip()
+    respondent_email = normalize_respondent_email(record.get("respondent_email"))
+    if not respondent_email:
+        raise ValueError("respondent_email is required for google form responses")
+    account_hash = google_form_account_key(
+        respondent_email,
+        str(record.get("account_hash") or "").strip() or form_hash,
+    )
     with connect_database(db_path) as connection:
         connection.execute(
             """
@@ -239,6 +311,8 @@ def insert_google_form_response(db_path: Path, record: dict[str, Any]) -> None:
                 form_title,
                 form_id,
                 response_id,
+                respondent_email,
+                account_hash,
                 submitted_at,
                 received_at,
                 name,
@@ -248,14 +322,32 @@ def insert_google_form_response(db_path: Path, record: dict[str, Any]) -> None:
                 phq8_json,
                 remote_addr,
                 user_agent
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(form_hash) DO UPDATE SET
+                form_dir_name = excluded.form_dir_name,
+                form_title = excluded.form_title,
+                form_id = excluded.form_id,
+                response_id = excluded.response_id,
+                respondent_email = excluded.respondent_email,
+                account_hash = excluded.account_hash,
+                submitted_at = excluded.submitted_at,
+                received_at = excluded.received_at,
+                name = excluded.name,
+                age = excluded.age,
+                date_prefix = excluded.date_prefix,
+                fields_json = excluded.fields_json,
+                phq8_json = excluded.phq8_json,
+                remote_addr = excluded.remote_addr,
+                user_agent = excluded.user_agent
             """,
             (
-                record.get("form_hash") or "",
+                form_hash,
                 record.get("form_dir_name") or "",
                 record.get("form_title") or "",
                 record.get("form_id") or "",
                 record.get("response_id") or "",
+                respondent_email,
+                account_hash,
                 record.get("submitted_at") or "",
                 record.get("received_at") or "",
                 record.get("name") or "",
@@ -269,6 +361,243 @@ def insert_google_form_response(db_path: Path, record: dict[str, Any]) -> None:
         )
 
 
+def _google_form_response_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    phq8 = load_json(row["phq8_json"], {})
+    respondent_email = normalize_respondent_email(row["respondent_email"])
+    form_hash = row["form_hash"] or ""
+    account_hash = google_form_account_key(
+        respondent_email,
+        row["account_hash"] or form_hash,
+    )
+    return {
+        "user_key": account_hash,
+        "account_hash": account_hash,
+        "session_hash": account_hash,
+        "respondent_email": respondent_email,
+        "form_hash": form_hash,
+        "latest_form_hash": form_hash,
+        "form_dir_name": row["form_dir_name"] or "",
+        "form_title": row["form_title"] or "",
+        "form_id": row["form_id"] or "",
+        "response_id": row["response_id"] or "",
+        "name": row["name"] or "",
+        "age": row["age"] or "",
+        "submitted_at": row["submitted_at"] or "",
+        "received_at": row["received_at"] or "",
+        "date_prefix": row["date_prefix"] or "",
+        "fields": load_json(row["fields_json"], {}),
+        "phq8_score": phq8.get("total_score") if isinstance(phq8, dict) else None,
+        "phq8_answered_count": phq8.get("answered_count") if isinstance(phq8, dict) else None,
+        "phq8": phq8 if isinstance(phq8, dict) else {},
+        "google_form_response_file": "",
+        "saved_to": "sqlite",
+    }
+
+
+def get_latest_google_form_response_for_account(
+    db_path: Path,
+    *,
+    account_hash: Any = "",
+    respondent_email: Any = "",
+    form_hash: Any = "",
+) -> Optional[dict[str, Any]]:
+    normalized_email = normalize_respondent_email(respondent_email)
+    candidate_account_hashes = []
+    for candidate in (
+        account_hash,
+        google_form_account_hash(normalized_email),
+        form_hash,
+    ):
+        key = str(candidate or "").strip()
+        if key and key not in candidate_account_hashes:
+            candidate_account_hashes.append(key)
+
+    with connect_database(db_path) as connection:
+        row = None
+        for candidate in candidate_account_hashes:
+            row = connection.execute(
+                """
+                SELECT
+                    form_hash,
+                    form_dir_name,
+                    form_title,
+                    form_id,
+                    response_id,
+                    respondent_email,
+                    account_hash,
+                    submitted_at,
+                    received_at,
+                    name,
+                    age,
+                    date_prefix,
+                    fields_json,
+                    phq8_json
+                FROM google_form_responses
+                WHERE account_hash = ?
+                ORDER BY submitted_at DESC, received_at DESC, form_dir_name DESC
+                LIMIT 1
+                """,
+                (candidate,),
+            ).fetchone()
+            if row is not None:
+                return _google_form_response_from_row(row)
+
+        if normalized_email:
+            row = connection.execute(
+                """
+                SELECT
+                    form_hash,
+                    form_dir_name,
+                    form_title,
+                    form_id,
+                    response_id,
+                    respondent_email,
+                    account_hash,
+                    submitted_at,
+                    received_at,
+                    name,
+                    age,
+                    date_prefix,
+                    fields_json,
+                    phq8_json
+                FROM google_form_responses
+                WHERE lower(respondent_email) = ?
+                ORDER BY submitted_at DESC, received_at DESC, form_dir_name DESC
+                LIMIT 1
+                """,
+                (normalized_email,),
+            ).fetchone()
+            if row is not None:
+                return _google_form_response_from_row(row)
+
+        form_hash_key = str(form_hash or "").strip()
+        if form_hash_key:
+            row = connection.execute(
+                """
+                SELECT
+                    form_hash,
+                    form_dir_name,
+                    form_title,
+                    form_id,
+                    response_id,
+                    respondent_email,
+                    account_hash,
+                    submitted_at,
+                    received_at,
+                    name,
+                    age,
+                    date_prefix,
+                    fields_json,
+                    phq8_json
+                FROM google_form_responses
+                WHERE form_hash = ?
+                ORDER BY submitted_at DESC, received_at DESC, form_dir_name DESC
+                LIMIT 1
+                """,
+                (form_hash_key,),
+            ).fetchone()
+            if row is not None:
+                return _google_form_response_from_row(row)
+    return None
+
+
+def google_form_response_to_selected_user(response: dict[str, Any]) -> dict[str, Any]:
+    account_hash = str(response.get("account_hash") or response.get("user_key") or "").strip()
+    form_hash = str(response.get("form_hash") or "").strip()
+    phq8 = response.get("phq8") if isinstance(response.get("phq8"), dict) else {}
+    return {
+        "user_key": account_hash or form_hash,
+        "account_hash": account_hash or form_hash,
+        "session_hash": account_hash or form_hash,
+        "respondent_email": normalize_respondent_email(response.get("respondent_email")),
+        "form_hash": form_hash,
+        "latest_form_hash": str(response.get("latest_form_hash") or form_hash),
+        "form_dir_name": response.get("form_dir_name") or "",
+        "form_title": response.get("form_title") or "",
+        "form_id": response.get("form_id") or "",
+        "response_id": response.get("response_id") or "",
+        "name": response.get("name") or "",
+        "age": response.get("age") or "",
+        "submitted_at": response.get("submitted_at") or "",
+        "received_at": response.get("received_at") or "",
+        "phq8_score": response.get("phq8_score"),
+        "phq8_answered_count": response.get("phq8_answered_count"),
+        "phq8": phq8,
+    }
+
+
+def latest_google_form_response_for_metadata(
+    db_path: Path,
+    *,
+    session_hash: Any = "",
+    metadata: Any = None,
+) -> Optional[dict[str, Any]]:
+    metadata_dict = metadata if isinstance(metadata, dict) else {}
+    selected_user = metadata_dict.get("selected_user")
+    selected_user = selected_user if isinstance(selected_user, dict) else {}
+
+    account_candidates = [
+        selected_user.get("account_hash"),
+        selected_user.get("user_key"),
+        selected_user.get("session_hash"),
+        metadata_dict.get("account_hash"),
+        session_hash,
+    ]
+    email = (
+        selected_user.get("respondent_email")
+        or selected_user.get("email")
+        or metadata_dict.get("respondent_email")
+        or metadata_dict.get("email")
+    )
+    form_hash = selected_user.get("latest_form_hash") or selected_user.get("form_hash")
+
+    seen: set[str] = set()
+    for account_hash in account_candidates:
+        key = str(account_hash or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        response = get_latest_google_form_response_for_account(
+            db_path,
+            account_hash=key,
+            respondent_email=email,
+            form_hash=form_hash,
+        )
+        if response is not None:
+            return response
+
+    return get_latest_google_form_response_for_account(
+        db_path,
+        respondent_email=email,
+        form_hash=form_hash,
+    )
+
+
+def attach_latest_google_form_response_to_metadata(
+    db_path: Path,
+    *,
+    session_hash: Any = "",
+    metadata: Any = None,
+) -> tuple[dict[str, Any], bool]:
+    metadata_dict = dict(metadata) if isinstance(metadata, dict) else {}
+    response = latest_google_form_response_for_metadata(
+        db_path,
+        session_hash=session_hash,
+        metadata=metadata_dict,
+    )
+    if response is None:
+        return metadata_dict, False
+
+    selected_user = metadata_dict.get("selected_user")
+    selected_user = dict(selected_user) if isinstance(selected_user, dict) else {}
+    latest_user = google_form_response_to_selected_user(response)
+    updated_user = {**selected_user, **latest_user}
+    changed = updated_user != selected_user
+    metadata_dict["selected_user"] = updated_user
+    metadata_dict["ground_truth_source"] = "google_form_responses.latest_by_account.phq8"
+    return metadata_dict, changed
+
+
 def list_google_form_response_summaries(db_path: Path) -> list[dict[str, Any]]:
     with connect_database(db_path) as connection:
         rows = connection.execute(
@@ -276,35 +605,32 @@ def list_google_form_response_summaries(db_path: Path) -> list[dict[str, Any]]:
             SELECT
                 form_hash,
                 form_dir_name,
+                form_title,
+                form_id,
+                response_id,
+                respondent_email,
+                account_hash,
                 name,
                 age,
                 submitted_at,
                 received_at,
+                date_prefix,
+                fields_json,
                 phq8_json
             FROM google_form_responses
-            ORDER BY received_at DESC, form_dir_name DESC
+            ORDER BY submitted_at DESC, received_at DESC, form_dir_name DESC
             """
         ).fetchall()
 
-    summaries = []
+    summaries_by_account: dict[str, dict[str, Any]] = {}
     for row in rows:
-        phq8 = load_json(row["phq8_json"], {})
-        summaries.append(
-            {
-                "form_hash": row["form_hash"] or "",
-                "form_dir_name": row["form_dir_name"] or "",
-                "name": row["name"] or "",
-                "age": row["age"] or "",
-                "submitted_at": row["submitted_at"] or "",
-                "received_at": row["received_at"] or "",
-                "phq8_score": phq8.get("total_score") if isinstance(phq8, dict) else None,
-                "phq8_answered_count": phq8.get("answered_count") if isinstance(phq8, dict) else None,
-                "phq8": phq8 if isinstance(phq8, dict) else {},
-                "google_form_response_file": "",
-                "saved_to": "sqlite",
-            }
-        )
-    return summaries
+        summary = _google_form_response_from_row(row)
+        account_hash = summary["account_hash"] or summary["form_hash"]
+        if account_hash not in summaries_by_account:
+            summary["form_count"] = 0
+            summaries_by_account[account_hash] = summary
+        summaries_by_account[account_hash]["form_count"] += 1
+    return list(summaries_by_account.values())
 
 
 def upsert_realtime_session(db_path: Path, record: dict[str, Any]) -> None:
@@ -597,7 +923,9 @@ def update_realtime_session_run_depression(
                 depression_binary = ?,
                 depression_result_json = ?,
                 depression_error = ?,
-                depression_completed_at = ?
+                depression_completed_at = ?,
+                ground_truth_total_score = COALESCE(?, ground_truth_total_score),
+                ground_truth_binary = COALESCE(?, ground_truth_binary)
             WHERE session_hash = ? AND run_id = ?
             """,
             (
@@ -607,6 +935,12 @@ def update_realtime_session_run_depression(
                 result_json,
                 depression_update.get("error") or depression_update.get("message"),
                 depression_update.get("completed_at"),
+                depression_update.get("ground_truth_total_score"),
+                (
+                    None
+                    if depression_update.get("ground_truth_binary") is None
+                    else int(bool(depression_update.get("ground_truth_binary")))
+                ),
                 session_hash,
                 run_id,
             ),

@@ -29,6 +29,27 @@ def test_realtime_servers_keep_response_interruption_enabled() -> None:
         assert '"interrupt_response": True' in source
 
 
+def test_realtime_audio_detection_is_sensitive_for_quiet_speech() -> None:
+    for relative_path in (
+        "app/templates/realtime.html",
+        "app/templates/feedback_realtime.html",
+    ):
+        source = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+
+        assert "const BARGE_IN_VOICE_THRESHOLD = 0.024;" in source
+        assert "const BARGE_IN_REQUIRED_FRAMES = 5;" in source
+        assert "state.assistantEchoFloor * 2.0" in source
+        assert "remoteVolume * 0.12" in source
+
+    for relative_path in (
+        "app/server_realtime.py",
+        "app/server_feedback.py",
+    ):
+        source = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+
+        assert '"threshold": 0.22' in source
+
+
 def test_realtime_server_does_not_enable_debug_mode_by_default() -> None:
     source = (PROJECT_ROOT / "app/server_realtime.py").read_text(encoding="utf-8")
 
@@ -70,13 +91,20 @@ def test_realtime_frontend_has_prediction_loading_and_aspect_modal() -> None:
     assert 'id="depressionResultBackdrop"' in source
     assert "function showDepressionLoading" in source
     assert "function renderDepressionResult" in source
-    assert "Personal aspect query" in source
-    assert "Retrieved participant transcript" in source
-    assert "Ground truth" in source
+    assert "depression-loading-animation" in source
+    assert "assessment-loading-main" not in source
+    assert "--assessment-close-x" in source
+    assert "function setDepressionReturnTarget" in source
+    assert "執行編號" not in source
+    assert "assessment-warning" not in source
+    assert "hard_warnings" not in source
+    assert "個人化面向查詢" in source
+    assert "檢索到的使用者語句" in source
+    assert "標註總分" in source
     assert "function handleDepressionResultButton" in source
     assert 'state.depressionResultView === "retry"' in source
-    assert 'id="recordAudioToggle" type="checkbox" checked' in source
-    assert 'id="recordVideoToggle" type="checkbox" checked' in source
+    assert 'id="recordAudioToggle" type="checkbox">' in source
+    assert 'id="recordVideoToggle" type="checkbox">' in source
 
 
 def test_realtime_index_requires_a_complete_success_result() -> None:

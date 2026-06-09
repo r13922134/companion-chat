@@ -17,6 +17,7 @@ try:
     from .storage import (
         count_feedback_records,
         ensure_realtime_session,
+        google_form_account_key,
         initialize_database,
         insert_google_form_response,
         list_google_form_response_summaries,
@@ -29,6 +30,7 @@ except ImportError:
     from storage import (
         count_feedback_records,
         ensure_realtime_session,
+        google_form_account_key,
         initialize_database,
         insert_google_form_response,
         list_google_form_response_summaries,
@@ -145,13 +147,6 @@ traditional_converter_error = ""
 def ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
-
-
-def read_json_file(path: Path, default=None):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {} if default is None else default
 
 
 def write_json_file(path: Path, payload: dict) -> None:
@@ -325,10 +320,6 @@ def build_default_assistant_instructions(conversation_mode: str) -> str:
     return build_base_assistant_instructions(conversation_mode)
 
 
-def build_search_enabled_assistant_instructions(conversation_mode: str) -> str:
-    return build_default_assistant_instructions(conversation_mode)
-
-
 def build_medical_qa_assistant_instructions(conversation_mode: str, user_transcript: str = "") -> str:
     builder = [
         build_base_assistant_instructions(conversation_mode),
@@ -461,7 +452,7 @@ def build_realtime_client_session_config(conversation_mode: str) -> dict:
                 "transcription": {"model": REALTIME_TRANSCRIPTION_MODEL, "language": "zh"},
                 "turn_detection": {
                     "type": "server_vad",
-                    "threshold": 0.3,
+                    "threshold": 0.22,
                     "prefix_padding_ms": 400,
                     "silence_duration_ms": 1500,
                     "create_response": False,
@@ -829,18 +820,6 @@ def upload_feedback_qa_records(feedback_records: list[dict]) -> list[dict]:
     return results
 
 
-def session_manifest_path(session_dir: Path) -> Path:
-    return session_dir / "request_manifest.json"
-
-
-def update_manifest(session_dir: Path, **updates) -> dict:
-    manifest_path = session_manifest_path(session_dir)
-    manifest = read_json_file(manifest_path, default={})
-    manifest.update(updates)
-    write_json_file(manifest_path, manifest)
-    return manifest
-
-
 def load_openai_api_key() -> str:
     return os.environ.get("OPENAI_API_KEY", "").strip()
 
@@ -953,40 +932,6 @@ def compute_phq8_score(fields: dict) -> dict:
         "max_score": 24,
         "item_scores": item_scores,
     }
-
-
-def form_hash_from_dir_name(dir_name: str) -> str:
-    parts = str(dir_name or "").rsplit("_", 1)
-    return parts[1] if len(parts) == 2 else str(dir_name or "")
-
-
-def build_realtime_user_summary(form_dir: Path) -> Optional[dict]:
-    response_file = form_dir / "google_form_response.json"
-    if not response_file.is_file():
-        return None
-
-    record = read_json_file(response_file, default={})
-    if not isinstance(record, dict):
-        return None
-
-    phq8 = record.get("phq8") if isinstance(record.get("phq8"), dict) else {}
-    form_hash = (record.get("form_hash") or form_hash_from_dir_name(form_dir.name)).strip()
-    if not form_hash:
-        return None
-
-    return {
-        "form_hash": form_hash,
-        "form_dir_name": record.get("form_dir_name") or form_dir.name,
-        "name": record.get("name") or "",
-        "age": record.get("age") or "",
-        "submitted_at": record.get("submitted_at") or "",
-        "received_at": record.get("received_at") or "",
-        "phq8_score": phq8.get("total_score"),
-        "phq8_answered_count": phq8.get("answered_count"),
-        "phq8": phq8,
-        "google_form_response_file": str(response_file),
-    }
-
 
 
 @app.get("/")
@@ -1164,12 +1109,19 @@ def receive_google_form():
 
         name = get_first_value_from_form(payload, "姓名", "name")
         age = get_first_value_from_form(payload, "年齡", "age")
+        respondent_email = str(payload.get("respondent_email") or "").strip().lower()
+        if not respondent_email:
+            return jsonify({
+                "status": "error",
+                "message": "respondent_email is required; enable email collection on the Google Form.",
+            }), 400
         submitted_at = str(payload.get("submitted_at") or datetime.now().isoformat(timespec="seconds"))
         form_date = get_first_value_from_form(payload, "日期", "date") or submitted_at
         date_text = normalize_google_form_date(form_date)
         date_prefix = date_text.replace("-", "")
 
         form_dir_name, form_hash = create_form_identity(date_prefix)
+        account_hash = google_form_account_key(respondent_email, form_hash)
 
         phq8_result = compute_phq8_score(fields)
 
@@ -1179,6 +1131,8 @@ def receive_google_form():
             "form_title": payload.get("form_title") or "PHQ-8情緒量表",
             "form_id": payload.get("form_id") or "",
             "response_id": payload.get("response_id") or "",
+            "respondent_email": respondent_email,
+            "account_hash": account_hash,
             "submitted_at": submitted_at,
             "received_at": datetime.now().isoformat(timespec="seconds"),
             "name": name,
@@ -1195,13 +1149,16 @@ def receive_google_form():
         insert_google_form_response(DATABASE_PATH, record)
 
         print(
-            f"[GOOGLE FORM] Done | dir={form_dir_name} | name={name or 'unknown'} | score={phq8_result.get('total_score')}",
+            f"[GOOGLE FORM] Done | account={account_hash} | dir={form_dir_name} | name={name or 'unknown'} | score={phq8_result.get('total_score')}",
             flush=True,
         )
 
         return jsonify({
             "status": "ok",
             "message": "google form response saved",
+            "account_hash": account_hash,
+            "session_hash": account_hash,
+            "respondent_email": respondent_email,
             "form_hash": form_hash,
             "form_dir_name": form_dir_name,
             "saved_file": "",
@@ -1220,99 +1177,6 @@ def receive_google_form():
 
 def sanitize_session_hash(value: str) -> str:
     return "".join(ch for ch in str(value or "").strip() if ch.isalnum() or ch in {"_", "-"})
-
-
-def get_or_create_session_dir(session_hash: str) -> Tuple[Path, str]:
-    existing_dirs = sorted(UPLOAD_ROOT.glob(f"*_{session_hash}"))
-    if existing_dirs:
-        session_dir = existing_dirs[0]
-        return session_dir, session_dir.name
-
-    date_prefix = datetime.now().strftime("%Y%m%d")
-    session_dir_name = f"{date_prefix}_{session_hash}"
-    session_dir = ensure_dir(UPLOAD_ROOT / session_dir_name)
-    return session_dir, session_dir_name
-
-
-def feedback_record_key(record: dict) -> Tuple[str, str]:
-    item_id = str(record.get("item_id") or "").strip()
-    if item_id:
-        return ("item_id", item_id)
-
-    response_text = str(record.get("response_text") or "").strip()
-    if response_text:
-        return ("response_text", response_text)
-
-    feedback_text = str(record.get("feedback_text") or "").strip()
-    return ("feedback_text", feedback_text)
-
-
-def merge_feedback_records(existing_records, incoming_records, session_hash: str) -> list[dict]:
-    merged_records = []
-    record_indexes = {}
-    now = datetime.now().isoformat(timespec="seconds")
-
-    for source_records in (existing_records, incoming_records):
-        if not isinstance(source_records, list):
-            continue
-        for raw_record in source_records:
-            if not isinstance(raw_record, dict):
-                continue
-            feedback_text = str(raw_record.get("feedback_text") or "").strip()
-            if not feedback_text:
-                continue
-
-            record = dict(raw_record)
-            record.pop("selected_user", None)
-            record["session_hash"] = session_hash
-            record["feedback_text"] = feedback_text
-            record.setdefault("source", "web_realtime_feedback")
-            record.setdefault("updated_at", now)
-            record.setdefault("created_at", record.get("updated_at") or now)
-
-            key = feedback_record_key(record)
-            if not key[1]:
-                key = ("feedback_index", str(len(merged_records)))
-
-            if key in record_indexes:
-                index = record_indexes[key]
-                original = merged_records[index]
-                merged_records[index] = {**original, **record}
-                merged_records[index]["created_at"] = original.get("created_at") or record.get("created_at") or now
-            else:
-                record_indexes[key] = len(merged_records)
-                merged_records.append(record)
-
-    return merged_records
-
-
-def write_merged_feedback_file(session_dir: Path, session_hash: str, session_dir_name: str, incoming_payload: dict) -> Path:
-    feedback_file = session_dir / "feedback.json"
-    existing_payload = read_json_file(feedback_file, default={})
-    existing_records = existing_payload.get("feedback_records") if isinstance(existing_payload, dict) else []
-    incoming_records = incoming_payload.get("feedback_records") if isinstance(incoming_payload, dict) else []
-    records = merge_feedback_records(existing_records, incoming_records, session_hash)
-    updated_at = datetime.now().isoformat(timespec="seconds")
-
-    feedback_payload = {
-        "status": "ok",
-        "source": "web_realtime_feedback",
-        "session_hash": session_hash,
-        "session_dir_name": session_dir_name,
-        "updated_at": updated_at,
-        "feedback_count": len(records),
-        "feedback_records": records,
-    }
-    write_json_file(feedback_file, feedback_payload)
-    update_manifest(
-        session_dir,
-        session_hash=session_hash,
-        session_dir_name=session_dir_name,
-        feedback_file=str(feedback_file),
-        feedback_count=len(records),
-        feedback_updated_at=updated_at,
-    )
-    return feedback_file
 
 
 @app.post("/api/realtime-feedback")
@@ -1399,7 +1263,7 @@ def upload_realtime_session():
         saved_files = []
         saved_file_names = []
         saved_file_paths = []
-        for field_name in ["metadata_file", "transcript_file", "transcript_text_file", "feedback_file"]:
+        for field_name in ["metadata_file", "transcript_file", "feedback_file"]:
             file = request.files.get(field_name)
             if file and file.filename:
                 filename = secure_filename(file.filename) or f"{field_name}.bin"
