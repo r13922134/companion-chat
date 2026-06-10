@@ -23,7 +23,6 @@ uploads/feedback/
 ## 安裝
 
 ```bash
-cd ~/companion
 git clone https://github.com/r13922134/companion-chat.git
 cd companion-chat
 
