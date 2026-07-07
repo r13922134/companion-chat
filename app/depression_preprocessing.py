@@ -15,12 +15,20 @@ try:
         artifact_write_path,
         ensure_artifact_parent,
     )
+    from .prompts import (
+        DEPRESSION_TRANSLATION_SYSTEM_PROMPT,
+        build_depression_translation_user_prompt,
+    )
 except ImportError:
     from session_artifacts import (
         artifact_read_path,
         artifact_record,
         artifact_write_path,
         ensure_artifact_parent,
+    )
+    from prompts import (
+        DEPRESSION_TRANSLATION_SYSTEM_PROMPT,
+        build_depression_translation_user_prompt,
     )
 
 
@@ -138,16 +146,7 @@ def translate_user_utterance_chunk(
     rows: list[dict],
     model: str,
 ) -> dict[int, str]:
-    payload_rows = [
-        {"index": int(row["utterance_index"]), "text": str(row["text"])}
-        for row in rows
-    ]
-    user_prompt = (
-        "Return a JSON object with this exact shape: "
-        '{"translations":[{"index":1,"text":"..."}]}. '
-        "Translate each item independently and keep the same index values.\n\n"
-        f"{json.dumps({'utterances': payload_rows}, ensure_ascii=False)}"
-    )
+    user_prompt = build_depression_translation_user_prompt(rows)
     response = post_openai_json(
         "/chat/completions",
         {
@@ -160,14 +159,7 @@ def translate_user_utterance_chunk(
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "Translate participant utterances from Traditional Chinese "
-                        "or Mandarin into natural clinical English for a PHQ-8 "
-                        "depression screening model. Preserve first-person meaning, "
-                        "negation, uncertainty, frequency, duration, intensity, "
-                        "temporal references, and symptom wording. Do not add "
-                        "diagnoses, scores, interpretations, or advice. Return only JSON."
-                    ),
+                    "content": DEPRESSION_TRANSLATION_SYSTEM_PROMPT,
                 },
                 {"role": "user", "content": user_prompt},
             ],

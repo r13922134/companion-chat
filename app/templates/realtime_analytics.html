@@ -213,6 +213,10 @@
       background: #fffafb;
     }
 
+    .upload-card.unavailable {
+      background: #f8f9fb;
+    }
+
     .upload-card.risk {
       background: #fff9f1;
     }
@@ -261,6 +265,11 @@
     .status-dot.error {
       background: var(--red);
       box-shadow: 0 0 0 4px rgba(201, 52, 82, 0.12);
+    }
+
+    .status-dot.unavailable {
+      background: #747b88;
+      box-shadow: 0 0 0 4px rgba(116, 123, 136, 0.13);
     }
 
     .card-title {
@@ -447,6 +456,11 @@
     .status-pill.error {
       background: var(--red-soft);
       color: var(--red);
+    }
+
+    .status-pill.unavailable {
+      background: #eef0f4;
+      color: #555d6a;
     }
 
     .summary-grid {
@@ -675,7 +689,7 @@
       <section class="metric-strip" id="metricStrip" aria-label="metrics"></section>
 
       <section class="toolbar" aria-label="filters">
-        <input class="control" id="searchInput" type="search" placeholder="搜尋姓名、hash、run id">
+        <input class="control" id="searchInput" type="search" placeholder="搜尋姓名、account id、run id">
         <select class="control" id="userSelect">
           <option value="">所有使用者</option>
         </select>
@@ -684,6 +698,7 @@
           <option value="ok">ok</option>
           <option value="queued">queued</option>
           <option value="running">running</option>
+          <option value="unavailable">unavailable</option>
           <option value="error">error</option>
           <option value="empty">尚無狀態</option>
         </select>
@@ -841,6 +856,7 @@
     function statusTone(run) {
       const status = normalizedStatus(run?.depression_status);
       if (status === "error") return "error";
+      if (status === "unavailable") return "unavailable";
       if (status === "queued" || status === "running") return status;
       const prediction = numeric(run?.prediction);
       if (prediction !== null && prediction >= 10) return "risk";
@@ -849,6 +865,8 @@
     }
 
     function statusLabel(status) {
+      const normalized = normalizedStatus(status);
+      if (normalized === "unavailable") return "不可用";
       return textOrDash(status);
     }
 
@@ -865,13 +883,14 @@
       const haystack = [
         user.name,
         user.user_key,
+        user.account_id,
         user.account_hash,
         user.session_hash,
-        user.respondent_email,
         user.form_hash,
         user.age,
         user.submitted_at,
         ...(user.runs || []).map((run) => run.run_id),
+        ...(user.runs || []).map((run) => run.account_id),
         ...(user.runs || []).map((run) => run.session_hash),
       ].join(" ").toLowerCase();
       return haystack.includes(query);
@@ -890,6 +909,7 @@
     function runViewKey(user, run) {
       return [
         user.user_key || "",
+        run.account_id || "",
         run.session_hash || "",
         run.run_id || "",
         run.uploaded_at || run.started_at || "",
@@ -903,8 +923,8 @@
           view_key: runViewKey(user, run),
           user_name: user.name,
           user_key: user.user_key,
+          account_id: user.account_id,
           account_hash: user.account_hash,
-          respondent_email: user.respondent_email,
           age: run.age || user.age,
           form_hash: run.form_hash || user.form_hash,
           gt_form_hash: run.gt_form_hash || run.form_hash || "",
@@ -1025,8 +1045,7 @@
       const rows = [
         ["姓名", run.user_name || run.user_key],
         ["年齡", run.age],
-        ["帳號 Hash", run.account_hash || run.user_key],
-        ["Email", run.respondent_email],
+        ["Account ID", run.account_id || run.account_hash || run.user_key],
         ["GT 表單 Hash", run.gt_form_hash || run.form_hash],
         ["最新表單 Hash", run.latest_form_hash || run.form_hash],
         ["問卷份數", run.form_count],
@@ -1084,7 +1103,7 @@
           <div>
             <div class="detail-time">${escapeHtml(formatDate(run.uploaded_at || run.started_at))}</div>
             <h2 class="detail-title" id="detailTitle">${escapeHtml(title)}</h2>
-            <div class="detail-meta">Run ${escapeHtml(textOrDash(run.run_id))}<br>${escapeHtml(textOrDash(run.session_hash || run.form_hash || run.user_key))}</div>
+            <div class="detail-meta">Run ${escapeHtml(textOrDash(run.run_id))}<br>${escapeHtml(textOrDash(run.account_id || run.session_hash || run.form_hash || run.user_key))}</div>
           </div>
           <span class="status-pill ${escapeHtml(status)}">${escapeHtml(statusLabel(run.depression_status))}</span>
         </header>

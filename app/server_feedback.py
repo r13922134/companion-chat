@@ -26,6 +26,20 @@ try:
         upsert_feedback_records,
         upsert_realtime_session,
     )
+    from .prompts import (
+        append_tool_output_to_instructions,
+        build_default_assistant_instructions,
+        build_medical_qa_tool_spec,
+        build_mood_assessment_context_prompt,
+        build_mood_assessment_tool_spec,
+        build_response_instructions,
+        build_search_web_tool_spec,
+        build_web_search_context_prompt,
+        canonical_mood_aspect_key,
+        mood_aspect_labels,
+        normalize_mood_aspect_keys,
+        normalize_mood_aspect_state,
+    )
 except ImportError:
     from storage import (
         count_feedback_records,
@@ -38,6 +52,20 @@ except ImportError:
         upsert_feedback_record,
         upsert_feedback_records,
         upsert_realtime_session,
+    )
+    from prompts import (
+        append_tool_output_to_instructions,
+        build_default_assistant_instructions,
+        build_medical_qa_tool_spec,
+        build_mood_assessment_context_prompt,
+        build_mood_assessment_tool_spec,
+        build_response_instructions,
+        build_search_web_tool_spec,
+        build_web_search_context_prompt,
+        canonical_mood_aspect_key,
+        mood_aspect_labels,
+        normalize_mood_aspect_keys,
+        normalize_mood_aspect_state,
     )
 
 try:
@@ -95,47 +123,11 @@ UPLOAD_ROOT = (PROJECT_ROOT / "uploads" / "feedback").resolve()
 FORM_UPLOAD_ROOT = UPLOAD_ROOT
 DATABASE_PATH = resolve_database_path(PROJECT_ROOT)
 
-EMOTION_MODEL = "gpt-5.4-mini"
 WEB_SEARCH_MODEL = "gpt-5.4-mini"
+MOOD_ASSESSMENT_MODEL = "gpt-5.4-mini"
 REALTIME_MODEL = "gpt-realtime"
 REALTIME_TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
 REALTIME_DEFAULT_VOICE = "coral"
-REALTIME_MODE_LISTENING = "listening"
-REALTIME_MODE_GUIDANCE = "guidance"
-REALTIME_MODE_LISTENING_LABEL = "傾聽"
-REALTIME_MODE_GUIDANCE_LABEL = "建議"
-
-REALTIME_BASE_INSTRUCTIONS = """
-# Role & Objective
-你是一個陪伴對話的夥伴，不是問題解決型助理。
-使用者是台灣某癌症醫學中心的病患或家屬。
-你的任務是讓對方感覺被理解、被陪伴，而不是被分析或被教育。
-
-# Personality & Tone
-- 說話像一個有溫度的真實朋友，不是客服、不是醫生、也不是心理師
-- 語氣平靜、柔和、自然，不說教
-- 真誠、有同理心
-- 全程使用自然台灣中文口語，避免翻譯腔與書面語
-- 請使用台灣口音，避免中國口音
-- 允許停頓、猶豫、打斷自己，不要每句都發音完整
-
-# Instructions
-- ALWAYS 先接住對方當下說的話，再決定下一步
-- NEVER 在對方情緒未被接住前給建議或解法
-- NEVER 連續追問，盡量避免抽象二選一問題（例如：「你是壓力大還是焦慮？」）
-- NEVER 說這些空泛的安慰語：「放輕鬆」、「深呼吸」、「你很棒」、「一切都會好起來」
-- 情緒不需要有原因才值得被回應，不要強迫對方解釋感受
-- 如果對方語氣激動、諷刺或說「我不懂你在說什麼」，優先理解他的情緒狀態，NEVER 照字面重新解釋你說的話
-- 你自己就是陪伴的來源，不要把使用者推向其他資源
-- 不要每次都給解決方法；如果使用者只是想說話，先接住他的感受和處境
-
-# Response Style
-- 回應貼著對方剛說的話，不要跳到別的地方
-- 簡短自然，不要長篇分析
-- 如果要提問，問具體貼近情境的問題，例如：「你說的那件事，是最近才發生的嗎？」
-- 避免固定句型，每次回應根據對方當下說的話自然接
-- 除非使用者主動要求，否則不要列點、不要總結。
-""".strip()
 openai_client = None
 openai_client_error = None
 traditional_converter = None
@@ -202,12 +194,16 @@ def get_realtime_model() -> str:
     return str(env_config_value("OPENAI_REALTIME_MODEL", "REALTIME_MODEL", default=REALTIME_MODEL)).strip()
 
 
-def get_emotion_model() -> str:
-    return str(env_config_value("OPENAI_EMOTION_MODEL", "EMOTION_MODEL", default=EMOTION_MODEL)).strip()
-
-
 def get_web_search_model() -> str:
     return str(env_config_value("OPENAI_WEB_SEARCH_MODEL", "WEB_SEARCH_MODEL", default=WEB_SEARCH_MODEL)).strip()
+
+
+def get_mood_assessment_model() -> str:
+    return str(env_config_value(
+        "OPENAI_MOOD_ASSESSMENT_MODEL",
+        "MOOD_ASSESSMENT_MODEL",
+        default=MOOD_ASSESSMENT_MODEL,
+    )).strip()
 
 
 def get_medical_qa_vector_store_id() -> str:
@@ -255,194 +251,32 @@ def convert_to_taiwan_traditional(text: str) -> Tuple[str, bool, str, str]:
         return raw_text, False, traditional_converter_config, str(exc)
 
 
-def normalize_realtime_conversation_mode(raw_mode: str, allow_empty: bool = False) -> str:
-    mode = (raw_mode or "").strip().lower()
-    if allow_empty and not mode:
-        return ""
-    if mode == REALTIME_MODE_LISTENING:
-        return REALTIME_MODE_LISTENING
-    if mode == REALTIME_MODE_GUIDANCE:
-        return REALTIME_MODE_GUIDANCE
-    if REALTIME_MODE_LISTENING_LABEL in mode:
-        return REALTIME_MODE_LISTENING
-    if REALTIME_MODE_GUIDANCE_LABEL in mode:
-        return REALTIME_MODE_GUIDANCE
-    return REALTIME_MODE_LISTENING
-
-
-def build_conversation_mode_strategy(conversation_mode: str) -> str:
-    normalized_mode = normalize_realtime_conversation_mode(conversation_mode, allow_empty=True)
-    if not normalized_mode:
-        return ""
-    if normalized_mode == REALTIME_MODE_GUIDANCE:
-        return (
-            "# Conversation Mode: 建議模式\n"
-            "- 在陪伴的基礎上，時機合適時可以給一個具體、馬上能做到的小事\n"
-            "- 一次只給一個方向，NEVER 列出多個步驟\n"
-            "- 語氣像朋友說「要不要試試看⋯⋯」，不是在交代任務\n"
-            "- 仍然保持陪伴感，建議是補充，不是主軸"
-        )
-    return (
-        "# Conversation Mode: 傾聽模式\n"
-        "- 以接話為主，讓對方把話說完\n"
-        "- 反映感受，或問一個貼近對方剛說內容的具體問題\n"
-        "- NEVER 給建議，除非對方明確要求\n"
-        "- 不要急著往前推"
-    )
-
-
-def insert_conversation_mode_strategy(base_instructions: str, conversation_mode: str) -> str:
-    strategy = build_conversation_mode_strategy(conversation_mode)
-    if not strategy:
-        return base_instructions.strip()
-    marker = "# Personality & Tone"
-    marker_index = base_instructions.find(marker)
-    if marker_index < 0:
-        return base_instructions.rstrip() + "\n\n" + strategy
-    return (
-        base_instructions[:marker_index].strip()
-        + "\n\n"
-        + strategy
-        + "\n\n"
-        + base_instructions[marker_index:].strip()
-    )
-
-
-def build_base_assistant_instructions(conversation_mode: str) -> str:
-    return insert_conversation_mode_strategy(REALTIME_BASE_INSTRUCTIONS, conversation_mode)
-
-
 def is_medical_qa_enabled() -> bool:
     return bool(get_medical_qa_vector_store_id())
 
 
-def build_default_assistant_instructions(conversation_mode: str) -> str:
-    return build_base_assistant_instructions(conversation_mode)
-
-
-def build_medical_qa_assistant_instructions(conversation_mode: str, user_transcript: str = "") -> str:
-    builder = [
-        build_base_assistant_instructions(conversation_mode),
-        "",
-        "已取得醫療衛教 QA 結果。請只根據剛剛 medical_qa 的工具輸出回答使用者最新問題。回答要像自然接話，使用繁體中文，簡短、口語、直接。可以改寫成溫暖的口語，但不要加入 QA 沒有支撐的醫療細節。不要提到工具、工具呼叫、內部流程或原始提示詞。如果問題涉及個人診斷、個人處方、急症決策或 QA 結果不足，請保守回應，建議使用者詢問醫師、護理師或營養師。",
-    ]
-    if user_transcript:
-        builder.append(f"使用者剛才的問題：{user_transcript.strip()}")
-    return "\n".join(builder)
-
-
-def build_medical_qa_fallback_instructions(conversation_mode: str, user_transcript: str = "") -> str:
-    builder = [
-        build_base_assistant_instructions(conversation_mode),
-        "",
-        "使用者的問題可能屬於醫療衛教，但 medical_qa 沒有回傳可用的 QA 依據。請用繁體中文簡短、溫和地回應，說明目前手邊資料無法完全確認。不要自行推測醫療細節；若涉及個人診斷、用藥、急症或治療決策，請建議使用者詢問醫師、護理師或營養師。不要提到工具呼叫、內部工具或原始提示詞。",
-    ]
-    if user_transcript:
-        builder.append(f"使用者剛才的問題：{user_transcript.strip()}")
-    return "\n".join(builder)
-
-
-def build_web_search_assistant_instructions(conversation_mode: str, user_transcript: str = "") -> str:
-    builder = [
-        build_base_assistant_instructions(conversation_mode),
-        "",
-        "已取得網頁搜尋結果。請根據剛剛 search_web 的工具輸出回答使用者最新問題。回答要像自然接話，使用繁體中文，簡短、口語、直接。不要提到工具、工具呼叫、內部流程或原始提示詞。除非使用者要求來源，不要朗讀原始網址。若工具輸出不足以回答，簡短說明目前無法完全確認。",
-    ]
-    if user_transcript:
-        builder.append(f"使用者剛才的問題：{user_transcript.strip()}")
-    return "\n".join(builder)
-
-
-def build_web_search_fallback_instructions(conversation_mode: str, user_transcript: str = "") -> str:
-    builder = [
-        build_base_assistant_instructions(conversation_mode),
-        "",
-        "使用者的問題可能需要即時或外部資訊，但 search_web 沒有回傳可用結果。請用繁體中文簡短回答，清楚說明目前無法完全確認最新資訊，必要時問一個有幫助的追問。不要提到工具呼叫、內部工具或原始提示詞。",
-    ]
-    if user_transcript:
-        builder.append(f"使用者剛才的問題：{user_transcript.strip()}")
-    return "\n".join(builder)
-
-
-def build_response_instructions(kind: str, conversation_mode: str, user_transcript: str = "") -> str:
-    kind = (kind or "default").strip()
-    conversation_mode = normalize_realtime_conversation_mode(conversation_mode, allow_empty=True)
-    if kind == "medical_qa_assistant":
-        return build_medical_qa_assistant_instructions(conversation_mode, user_transcript)
-    if kind == "medical_qa_fallback":
-        return build_medical_qa_fallback_instructions(conversation_mode, user_transcript)
-    if kind == "web_search_assistant":
-        return build_web_search_assistant_instructions(conversation_mode, user_transcript)
-    if kind == "web_search_fallback":
-        return build_web_search_fallback_instructions(conversation_mode, user_transcript)
-    return build_default_assistant_instructions(conversation_mode)
-
-
 def build_medical_qa_tool() -> dict:
-    return {
-        "type": "function",
-        "name": "medical_qa",
-        "description": "查詢院內醫療衛教 QA。癌症治療、營養、放療、化療、副作用、照護、長照、衛教類問題優先使用此工具。不處理即時政策、新聞、價格、最新給付、個人診斷、個人處方或急症決策。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "用一句繁體中文查詢，聚焦在使用者想確認的癌症治療、營養、照護或衛教問題。",
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "簡短說明為什麼這題屬於醫療衛教 QA。",
-                },
-            },
-            "required": ["query"],
-        },
-    }
+    return build_medical_qa_tool_spec()
+
+
+def build_mood_assessment_tool() -> dict:
+    return build_mood_assessment_tool_spec()
 
 
 def build_search_web_tool(medical_qa_enabled: bool = True) -> dict:
-    description = (
-        "搜尋網頁以確認即時、近期、外部、指定來源或不確定的事實。"
-        "只有在使用者詢問今天、最新、新聞、天氣、價格、時程、法規、人物現況、產品規格、引用來源，"
-        "或答案可能已過期時才使用。"
-    )
-    if medical_qa_enabled:
-        description += (
-            "一般醫療衛教優先使用 medical_qa；"
-            "只有醫療問題依賴最新、即時或指定外部資料時才使用此工具。"
-        )
-    description += "一般聊天與情緒支持請直接回答。"
-    return {
-        "type": "function",
-        "name": "search_web",
-        "description": description,
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "用一句繁體中文或英文搜尋查詢，聚焦在使用者最新問題需要確認的事實。",
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "簡短說明為什麼這題需要即時、外部或指定來源資訊。",
-                },
-            },
-            "required": ["query"],
-        },
-    }
+    return build_search_web_tool_spec(medical_qa_enabled)
 
 
 def build_realtime_tools() -> list[dict]:
     medical_qa_enabled = is_medical_qa_enabled()
-    tools = []
+    tools = [build_mood_assessment_tool()]
     if medical_qa_enabled:
         tools.append(build_medical_qa_tool())
     tools.append(build_search_web_tool(medical_qa_enabled))
     return tools
 
 
-def build_realtime_client_session_config(conversation_mode: str) -> dict:
+def build_realtime_client_session_config() -> dict:
     return {
         "type": "realtime",
         "model": get_realtime_model(),
@@ -461,7 +295,7 @@ def build_realtime_client_session_config(conversation_mode: str) -> dict:
             },
             "output": {"voice": REALTIME_DEFAULT_VOICE},
         },
-        "instructions": build_default_assistant_instructions(conversation_mode),
+        "instructions": build_default_assistant_instructions(),
         "output_modalities": ["audio"],
         "tools": build_realtime_tools(),
         "tool_choice": "auto",
@@ -496,154 +330,16 @@ def normalize_realtime_messages(raw_messages) -> List[Dict[str, str]]:
     return normalized
 
 
-def build_phq8_symptom_summary(phq8_details) -> str:
-    if isinstance(phq8_details, str) and phq8_details.strip():
-        try:
-            phq8_details = json.loads(phq8_details)
-        except Exception:
-            phq8_details = {}
-    phq8 = phq8_details if isinstance(phq8_details, dict) else {}
-    item_scores = phq8.get("item_scores") if isinstance(phq8.get("item_scores"), dict) else {}
-    summary_parts = []
-    total_score = phq8.get("total_score")
-    max_score = phq8.get("max_score") or 24
-    answered_count = phq8.get("answered_count")
-    if total_score is not None:
-        score_text = f"PHQ-8 總分：{total_score}/{max_score}"
-        if answered_count is not None:
-            score_text += f"，已回答 {answered_count}/8 題"
-        summary_parts.append(score_text + "。")
-
-    symptoms = []
-    for item_no in range(1, 9):
-        item = item_scores.get(str(item_no))
-        if not isinstance(item, dict):
-            continue
-        try:
-            score = int(item.get("score") or 0)
-        except Exception:
-            score = 0
-        if score <= 0:
-            continue
-        question = str(item.get("question") or "").strip()
-        symptom = question
-        if "." in symptom and symptom.split(".", 1)[0].strip().isdigit():
-            symptom = symptom.split(".", 1)[1].strip()
-        answer = str(item.get("answer") or "").strip()
-        symptoms.append(f"{symptom or question} ({answer})")
-
-    if symptoms:
-        summary_parts.append("使用者回報過去兩週有以下症狀：" + "、".join(symptoms) + "。")
-    return "".join(summary_parts)
-
-
-def build_realtime_emotion_system_prompt() -> str:
-    return (
-        "根據最近對話與過去兩週回報的症狀分類使用者當下狀態，只回 JSON：\n\n"
-        "{\"emotion\":\"positive|neutral|negative\",\"conversation_mode\":\"傾聽模式|建議模式\"}\n\n"
-        "emotion：\n\n"
-        "- negative：悲傷、焦慮、生氣、絕望、壓力、痛苦、自責，且這些感受在當下表達中佔主導。\n\n"
-        "- neutral：中性、平靜、事實陳述、狀態不明、情緒強度低，或尚未明顯表達正負向情緒。\n\n"
-        "- positive：語氣中明顯帶有好轉、放鬆，或願意面對／採取行動的感覺，且這些內容在當下表達中佔主導。\n\n"
-        "conversation_mode：\n\n"
-        "請根據以下三點選擇最適合回應使用者的對話策略：\n\n"
-        "1. 你剛判斷出的 emotion tag。\n\n"
-        "2. 最近對話內容 (用以判斷是否有明確尋求建議) 。\n\n"
-        "3. PHQ-8 的結果。\n\n"
-        "- 當使用者情緒重、狀態不明、還在鋪陳、主要需要被理解或陪伴時 → 選 **傾聽模式**。\n\n"
-        "- 當使用者主動詢問怎麼做、想改善、明確尋求方法、願意嘗試下一步時"
-        "（範例：「可以給我建議嗎？」「該怎麼辦？」「怎麼做比較好？」）→ 選 **建議模式**。\n\n"
-        "emotion 和 conversation_mode 必須分開判斷。\n\n"
-        "不要輸出解釋、標點外文字或 markdown，只輸出合法 JSON。"
-    )
-
-
-def build_realtime_emotion_conversation_text(messages: List[Dict[str, str]], phq8_details=None) -> str:
-    lines = []
-    phq8_summary = build_phq8_symptom_summary(phq8_details)
-    if phq8_summary:
-        lines.extend([phq8_summary, ""])
-    lines.append("最近對話：")
-    for message in messages:
-        role_label = "助理" if message.get("role") == "assistant" else "使用者"
-        lines.append(f"{role_label}: {message.get('text', '').strip()}")
-    lines.append("")
-    lines.append("JSON:")
-    return "\n".join(lines)
-
-
-def normalize_realtime_emotion(raw_emotion: str) -> str:
-    emotion = (raw_emotion or "").strip().lower()
-    if "neutral" in emotion or "中性" in emotion:
-        return "neutral"
-    if "negative" in emotion or "負向" in emotion:
-        return "negative"
-    if "positive" in emotion or "正向" in emotion:
-        return "positive"
-    return "neutral"
-
-
-def parse_realtime_emotion_result(content: str) -> dict:
-    raw = (content or "").strip()
-    if raw.startswith("```"):
-        raw = raw.replace("```json", "", 1).replace("```", "").strip()
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start >= 0 and end > start:
-        raw = raw[start:end + 1]
-    try:
-        parsed = json.loads(raw)
-    except Exception:
-        parsed = {}
-    return {
-        "emotion": normalize_realtime_emotion(parsed.get("emotion") or raw),
-        "conversation_mode": normalize_realtime_conversation_mode(parsed.get("conversation_mode") or raw),
-        "raw_content": content,
-    }
-
-
-def classify_realtime_emotion(messages: List[Dict[str, str]], phq8_details=None) -> dict:
-    if not messages:
-        return {"emotion": "neutral", "conversation_mode": REALTIME_MODE_LISTENING, "raw_content": "", "prompt": ""}
-    system_prompt = build_realtime_emotion_system_prompt()
-    user_prompt = build_realtime_emotion_conversation_text(messages, phq8_details)
-    payload = {
-        "model": get_emotion_model(),
-        "max_completion_tokens": 200,
-        "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    }
-    response = post_openai_json("/chat/completions", payload, timeout=30)
-    choices = response.get("choices") or []
-    if not choices:
-        raise RuntimeError("Emotion response has no choices")
-    message = choices[0].get("message") or {}
-    content = message.get("content") or ""
-    if not content:
-        raise RuntimeError("Emotion response content is empty")
-    result = parse_realtime_emotion_result(content)
-    result["prompt"] = f"情緒分類規則:\n{system_prompt}\n\n{user_prompt}"
-    return result
-
-
 def build_web_search_prompt(query: str, recent_messages: List[Dict[str, str]]) -> str:
-    lines = [
-        "請使用 web_search 查詢下方問題，並只回傳給語音助理使用的 WEB_CONTEXT。",
-        "請用繁體中文整理 700 字以內，包含：1. 可直接回答的重點；2. 重要限制或不確定處；3. 來源名稱或頁面標題。",
-        "不要直接扮演語音助理回答使用者；不要加入寒暄。",
-        "",
-        "最近對話：",
-    ]
-    for message in recent_messages[-4:]:
-        role_label = "助理" if message.get("role") == "assistant" else "使用者"
-        text = (message.get("text") or "").strip()
-        if text:
-            lines.append(f"{role_label}: {text}")
-    lines.extend(["", "搜尋問題：", query.strip()])
-    return "\n".join(lines)
+    return build_web_search_context_prompt(query, recent_messages)
+
+
+def build_mood_assessment_prompt(
+    query: str,
+    recent_messages: List[Dict[str, str]],
+    mood_aspect_state: dict | None = None,
+) -> str:
+    return build_mood_assessment_context_prompt(query, recent_messages, mood_aspect_state)
 
 
 def parse_openai_output_text(payload: dict) -> str:
@@ -658,6 +354,144 @@ def parse_openai_output_text(payload: dict) -> str:
             if isinstance(content_item, dict) and content_item.get("text"):
                 text_parts.append(str(content_item.get("text")))
     return "\n".join(text_parts).strip()
+
+
+def parse_json_object_text(text: str) -> dict:
+    raw = str(text or "").strip()
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        raw = "\n".join(lines).strip()
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        parsed = json.loads(raw[start:end + 1])
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def bounded_string_list(value, limit: int = 8) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items = []
+    for item in value:
+        text = str(item or "").strip()
+        if text:
+            items.append(text)
+        if len(items) >= limit:
+            break
+    return items
+
+
+def normalize_mood_assessment_plan(
+    query: str,
+    plan: dict,
+    previous_aspect_state: dict | None = None,
+) -> dict:
+    plan = plan if isinstance(plan, dict) else {}
+    previous_state = normalize_mood_aspect_state(previous_aspect_state)
+    previous_covered = previous_state["covered_aspects"]
+    support_stage = str(plan.get("support_stage") or "comforting").strip()
+    if support_stage not in {"exploration", "comforting", "action", "crisis_check"}:
+        support_stage = "comforting"
+
+    strategy = str(plan.get("strategy") or "validate").strip()
+    if strategy not in {
+        "ask_open_question",
+        "reflect_feeling",
+        "validate",
+        "gentle_suggestion",
+        "provide_information",
+        "crisis_redirect",
+    }:
+        strategy = "validate"
+
+    risk_level = str(plan.get("risk_level") or "none").strip()
+    if risk_level not in {"none", "low", "moderate", "high", "imminent"}:
+        risk_level = "none"
+
+    response_guidance = str(plan.get("response_guidance") or "").strip()
+    if not response_guidance:
+        response_guidance = "先接住使用者感受，不診斷或評分；必要時問一個低負擔、貼近情境的追問。"
+
+    suggested_follow_up = str(plan.get("suggested_follow_up") or "").strip()
+    if not suggested_follow_up and support_stage in {"exploration", "comforting"}:
+        suggested_follow_up = "你願意跟我說說，最近最困擾的是哪一部分嗎？"
+
+    current_aspects = normalize_mood_aspect_keys(plan.get("current_aspects") or [])
+    covered = []
+    seen_aspects = set()
+    for aspect_key in [*previous_covered, *current_aspects]:
+        if aspect_key and aspect_key not in seen_aspects:
+            covered.append(aspect_key)
+            seen_aspects.add(aspect_key)
+    remaining = normalize_mood_aspect_state({"covered_aspects": covered})["remaining_aspects"]
+    next_focus_aspect = canonical_mood_aspect_key(plan.get("next_focus_aspect"))
+    if next_focus_aspect not in remaining:
+        next_focus_aspect = ""
+
+    return {
+        "status": str(plan.get("status") or "ok").strip() or "ok",
+        "query": str(query or "").strip(),
+        "support_stage": support_stage,
+        "strategy": strategy,
+        "risk_level": risk_level,
+        "current_aspects": current_aspects,
+        "current_aspect_labels": mood_aspect_labels(current_aspects),
+        "next_focus_aspect": next_focus_aspect,
+        "next_focus_aspect_label": mood_aspect_labels([next_focus_aspect])[0] if next_focus_aspect else "",
+        "mood_aspect_state": {
+            "covered_aspects": covered,
+            "remaining_aspects": remaining,
+        },
+        "observed_signals": bounded_string_list(plan.get("observed_signals")),
+        "user_need": str(plan.get("user_need") or "").strip(),
+        "response_guidance": response_guidance,
+        "suggested_follow_up": suggested_follow_up,
+        "avoid": bounded_string_list(plan.get("avoid")),
+    }
+
+
+def assess_mood_support(
+    query: str,
+    recent_messages: List[Dict[str, str]],
+    mood_aspect_state: dict | None = None,
+) -> dict:
+    normalized_aspect_state = normalize_mood_aspect_state(mood_aspect_state)
+    prompt = build_mood_assessment_prompt(query, recent_messages, normalized_aspect_state)
+    model = get_mood_assessment_model()
+    print(
+        "[MOOD-ASSESSMENT-PROMPT] "
+        f"model={model}\n"
+        f"{prompt}\n"
+        "[/MOOD-ASSESSMENT-PROMPT]",
+        flush=True,
+    )
+    payload = {
+        "model": model,
+        "max_output_tokens": 500,
+        "input": prompt,
+    }
+    response = post_openai_json("/responses", payload, timeout=30)
+    output_text = parse_openai_output_text(response)
+    parse_error = ""
+    try:
+        parsed = parse_json_object_text(output_text)
+    except Exception as exc:
+        parsed = {}
+        parse_error = str(exc)
+    return {
+        "prompt": prompt,
+        "output_text": output_text,
+        "parse_error": parse_error,
+        "plan": normalize_mood_assessment_plan(query, parsed, normalized_aspect_state),
+    }
 
 
 def search_realtime_web_context(query: str, recent_messages: List[Dict[str, str]]) -> dict:
@@ -969,9 +803,7 @@ def list_realtime_users():
 @app.post("/api/realtime-client-secret")
 def create_realtime_client_secret():
     try:
-        payload = request.get_json(force=True, silent=True) or {}
-        conversation_mode = normalize_realtime_conversation_mode(payload.get("conversation_mode"), allow_empty=True)
-        session_config = build_realtime_client_session_config(conversation_mode)
+        session_config = build_realtime_client_session_config()
         registered_tools = [tool.get("name") or tool.get("type") for tool in session_config.get("tools", []) if isinstance(tool, dict)]
         secret_payload = post_openai_json("/realtime/client_secrets", {"session": session_config}, timeout=30)
         secret_value = extract_client_secret_value(secret_payload)
@@ -985,7 +817,6 @@ def create_realtime_client_secret():
             "registered_tools": registered_tools,
             "medical_qa_enabled": is_medical_qa_enabled(),
             "web_search_enabled": True,
-            "conversation_mode": conversation_mode,
         })
     except Exception as e:
         print(f"[ERROR] /api/realtime-client-secret failed: {e}", flush=True)
@@ -998,19 +829,23 @@ def realtime_response_instructions():
     try:
         payload = request.get_json(force=True, silent=True) or {}
         kind = payload.get("kind") or "default"
-        raw_conversation_mode = payload.get("conversation_mode")
-        conversation_mode = (
-            REALTIME_MODE_LISTENING
-            if raw_conversation_mode is None
-            else normalize_realtime_conversation_mode(raw_conversation_mode, allow_empty=True)
-        )
         user_transcript = payload.get("user_transcript") or ""
-        instructions = build_response_instructions(kind, conversation_mode, user_transcript)
+        tool_output = payload.get("tool_output") or ""
+        mood_aspect_state = normalize_mood_aspect_state(payload.get("mood_aspect_state") or {})
+        instructions = build_response_instructions(kind, user_transcript, mood_aspect_state)
+        instructions = append_tool_output_to_instructions(instructions, tool_output)
+        print(
+            "[REALTIME-PROMPT] "
+            f"kind={kind}\n"
+            f"{instructions}\n"
+            "[/REALTIME-PROMPT]",
+            flush=True,
+        )
         return jsonify({
             "status": "ok",
             "kind": kind,
-            "conversation_mode": normalize_realtime_conversation_mode(conversation_mode, allow_empty=True),
             "instructions": instructions,
+            "mood_aspect_state": mood_aspect_state,
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1034,30 +869,6 @@ def convert_traditional():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@app.post("/api/realtime-emotion")
-def realtime_emotion():
-    try:
-        payload = request.get_json(force=True, silent=True) or {}
-        messages = normalize_realtime_messages(payload.get("messages") or payload.get("conversation_history") or [])
-        result = classify_realtime_emotion(messages, None)
-        return jsonify({
-            "status": "ok",
-            "emotion": result.get("emotion"),
-            "conversation_mode": result.get("conversation_mode"),
-            "prompt": result.get("prompt", ""),
-            "raw_content": result.get("raw_content", ""),
-        })
-    except Exception as e:
-        print(f"[ERROR] /api/realtime-emotion failed: {e}", flush=True)
-        traceback.print_exc()
-        return jsonify({
-            "status": "error",
-            "message": str(e),
-            "emotion": "neutral",
-            "conversation_mode": REALTIME_MODE_LISTENING,
-        }), 500
-
-
 @app.post("/api/realtime-medical-qa")
 def realtime_medical_qa():
     try:
@@ -1073,6 +884,51 @@ def realtime_medical_qa():
         print(f"[ERROR] /api/realtime-medical-qa failed: {e}", flush=True)
         traceback.print_exc()
         return jsonify({"status": "medical_qa_failed", "message": str(e), "matches": []}), 500
+
+
+@app.post("/api/realtime-mood-assessment")
+def realtime_mood_assessment():
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        query = str(payload.get("query") or "").strip()
+        recent_messages = normalize_realtime_messages(payload.get("recent_messages") or [])
+        mood_aspect_state = normalize_mood_aspect_state(payload.get("mood_aspect_state") or {})
+        if not query:
+            return jsonify({
+                "status": "empty_query",
+                "query": "",
+                "plan": {},
+                "mood_aspect_state": mood_aspect_state,
+            })
+
+        result = assess_mood_support(query, recent_messages, mood_aspect_state)
+        plan = result.get("plan") or {}
+        status = "mood_assessment_parse_failed" if result.get("parse_error") else "ok"
+        return jsonify({
+            "status": status,
+            "query": query,
+            "model": get_mood_assessment_model(),
+            "prompt": result.get("prompt", ""),
+            "parse_error": result.get("parse_error", ""),
+            "plan": plan,
+            "mood_aspect_state": plan.get("mood_aspect_state", mood_aspect_state),
+            "support_stage": plan.get("support_stage", ""),
+            "strategy": plan.get("strategy", ""),
+            "risk_level": plan.get("risk_level", ""),
+            "current_aspects": plan.get("current_aspects", []),
+            "current_aspect_labels": plan.get("current_aspect_labels", []),
+            "next_focus_aspect": plan.get("next_focus_aspect", ""),
+            "next_focus_aspect_label": plan.get("next_focus_aspect_label", ""),
+            "observed_signals": plan.get("observed_signals", []),
+            "user_need": plan.get("user_need", ""),
+            "response_guidance": plan.get("response_guidance", ""),
+            "suggested_follow_up": plan.get("suggested_follow_up", ""),
+            "avoid": plan.get("avoid", []),
+        })
+    except Exception as e:
+        print(f"[ERROR] /api/realtime-mood-assessment failed: {e}", flush=True)
+        traceback.print_exc()
+        return jsonify({"status": "mood_assessment_failed", "message": str(e), "plan": {}}), 500
 
 
 @app.post("/api/realtime-web-search")
@@ -1121,7 +977,7 @@ def receive_google_form():
         date_prefix = date_text.replace("-", "")
 
         form_dir_name, form_hash = create_form_identity(date_prefix)
-        account_hash = google_form_account_key(respondent_email, form_hash)
+        account_id = google_form_account_key(respondent_email, form_hash)
 
         phq8_result = compute_phq8_score(fields)
 
@@ -1132,7 +988,8 @@ def receive_google_form():
             "form_id": payload.get("form_id") or "",
             "response_id": payload.get("response_id") or "",
             "respondent_email": respondent_email,
-            "account_hash": account_hash,
+            "account_id": account_id,
+            "account_hash": account_id,
             "submitted_at": submitted_at,
             "received_at": datetime.now().isoformat(timespec="seconds"),
             "name": name,
@@ -1149,16 +1006,16 @@ def receive_google_form():
         insert_google_form_response(DATABASE_PATH, record)
 
         print(
-            f"[GOOGLE FORM] Done | account={account_hash} | dir={form_dir_name} | name={name or 'unknown'} | score={phq8_result.get('total_score')}",
+            f"[GOOGLE FORM] Done | account={account_id} | dir={form_dir_name} | name={name or 'unknown'} | score={phq8_result.get('total_score')}",
             flush=True,
         )
 
         return jsonify({
             "status": "ok",
             "message": "google form response saved",
-            "account_hash": account_hash,
-            "session_hash": account_hash,
-            "respondent_email": respondent_email,
+            "account_id": account_id,
+            "account_hash": account_id,
+            "session_hash": account_id,
             "form_hash": form_hash,
             "form_dir_name": form_dir_name,
             "saved_file": "",
@@ -1183,7 +1040,7 @@ def sanitize_session_hash(value: str) -> str:
 def save_realtime_feedback():
     try:
         payload = request.get_json(force=True, silent=True) or {}
-        session_hash = sanitize_session_hash(payload.get("session_hash")) or uuid4().hex[:24]
+        session_hash = sanitize_session_hash(payload.get("account_id") or payload.get("session_hash")) or uuid4().hex[:24]
         item_id = str(payload.get("item_id") or "").strip()
         response_text = str(payload.get("response_text") or "").strip()
         feedback_text = str(payload.get("feedback_text") or "").strip()
@@ -1209,6 +1066,7 @@ def save_realtime_feedback():
 
         record = {
             "session_hash": session_hash,
+            "account_id": session_hash,
             "item_id": item_id or None,
             "response_text": response_text,
             "feedback_text": feedback_text,
@@ -1227,6 +1085,7 @@ def save_realtime_feedback():
         return jsonify({
             "status": "ok",
             "message": "feedback saved",
+            "account_id": session_hash,
             "session_hash": session_hash,
             "session_id": session_hash,
             "session_dir_name": session_dir_name,
@@ -1249,7 +1108,10 @@ def save_realtime_feedback():
 @app.post("/api/realtime-session")
 def upload_realtime_session():
     try:
-        session_hash = sanitize_session_hash(request.form.get("session_hash")) or uuid4().hex[:24]
+        session_hash = (
+            sanitize_session_hash(request.form.get("account_id") or request.form.get("session_hash"))
+            or uuid4().hex[:24]
+        )
         date_prefix = datetime.now().strftime("%Y%m%d")
         session_dir_name = f"{date_prefix}_{session_hash}"
         session_dir = ensure_dir(UPLOAD_ROOT / session_dir_name)
@@ -1296,6 +1158,7 @@ def upload_realtime_session():
                         for record in incoming_records:
                             if isinstance(record, dict):
                                 record["session_hash"] = session_hash
+                                record["account_id"] = session_hash
                                 record.setdefault("remote_addr", request.remote_addr)
                                 record.setdefault("user_agent", request.headers.get("User-Agent"))
                                 record.setdefault("updated_at", upload_received_at)
@@ -1345,6 +1208,7 @@ def upload_realtime_session():
             DATABASE_PATH,
             {
                 "session_hash": session_hash,
+                "account_id": session_hash,
                 "session_dir_name": session_dir_name,
                 "created_at": metadata.get("started_at_iso") if isinstance(metadata, dict) else upload_received_at,
                 "updated_at": upload_received_at,
@@ -1363,6 +1227,7 @@ def upload_realtime_session():
             {
                 "status": "ok",
                 "message": "upload saved",
+                "account_id": session_hash,
                 "session_hash": session_hash,
                 "session_id": session_hash,
                 "session_dir_name": session_dir_name,
@@ -1396,7 +1261,7 @@ def healthcheck():
         "openai_client_ready": openai_client is not None,
         "openai_client_error": openai_client_error,
         "realtime_model": get_realtime_model(),
-        "emotion_model": get_emotion_model(),
+        "mood_assessment_model": get_mood_assessment_model(),
         "web_search_model": get_web_search_model(),
         "medical_qa_enabled": is_medical_qa_enabled(),
         "database_path": str(DATABASE_PATH),

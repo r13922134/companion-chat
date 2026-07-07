@@ -23,80 +23,47 @@ except ImportError:
         build_dialogue,
     )
 
+try:
+    from .prompts import (
+        CLINICAL_ASSISTANT_SYSTEM_PROMPT,
+        DEPRESSION_ADAPTIVE_REFLECT_HEURISTIC_SUFFIX,
+        DEPRESSION_ASPECT_ADAPTIVE_REFLECT_QUERY_PROMPT,
+        DEPRESSION_ASPECT_CLINICAL_GRAPH_QUERY_PROMPT,
+        DEPRESSION_ASPECT_PROFILE_PROMPT,
+        DEPRESSION_ASPECT_QUERY_PROMPT,
+        DEPRESSION_ASPECT_QUERY_PROMPT_VERSION,
+        DEPRESSION_ASPECT_QUERY_PROMPTS,
+        DEPRESSION_CLINICAL_GRAPH_HEURISTIC_SUFFIX,
+        append_depression_optional_profile_context,
+        build_default_depression_evidence_query,
+        build_depression_prioritized_evidence_query,
+        build_depression_aspect_query_prompt,
+        build_depression_profile_prompt,
+    )
+except ImportError:
+    from prompts import (
+        CLINICAL_ASSISTANT_SYSTEM_PROMPT,
+        DEPRESSION_ADAPTIVE_REFLECT_HEURISTIC_SUFFIX,
+        DEPRESSION_ASPECT_ADAPTIVE_REFLECT_QUERY_PROMPT,
+        DEPRESSION_ASPECT_CLINICAL_GRAPH_QUERY_PROMPT,
+        DEPRESSION_ASPECT_PROFILE_PROMPT,
+        DEPRESSION_ASPECT_QUERY_PROMPT,
+        DEPRESSION_ASPECT_QUERY_PROMPT_VERSION,
+        DEPRESSION_ASPECT_QUERY_PROMPTS,
+        DEPRESSION_CLINICAL_GRAPH_HEURISTIC_SUFFIX,
+        append_depression_optional_profile_context,
+        build_default_depression_evidence_query,
+        build_depression_prioritized_evidence_query,
+        build_depression_aspect_query_prompt,
+        build_depression_profile_prompt,
+    )
 
-QUERY_PROMPT_VERSION = "aspect_evidence_v3"
-
-PROFILE_PROMPT = (
-    "You are a helpful assistant. Below is a transcript of an interview between "
-    "an interviewer and a participant. Based on the transcript, summarize the "
-    "participant's basic background, mood, occupation, relationships, life "
-    "events, and relevant emotional context. Provide only the summary."
-)
-
-QUERY_PROMPT = (
-    "You are writing a retrieval query, not an interview question. The query "
-    "will be embedded and used to rank participant utterances from a clinical "
-    "interview transcript.\n\n"
-    "Write one concise personalized evidence retrieval query for the PHQ-8 "
-    "aspect below. Requirements:\n"
-    "- Make the target symptom/evidence the main semantic focus.\n"
-    "- Prefer first-person participant utterances that describe symptom "
-    "presence, absence, frequency, duration, impact, or recent change.\n"
-    "- Use profile details only as optional anchors for finding symptom "
-    "evidence; include at most two anchors and only when they are plausibly "
-    "tied to the target symptom.\n"
-    "- Exclude neutral biography, locations, hobbies, work or family mentions, "
-    "interviewer prompts, and life-event background unless the same utterance "
-    "also shows the target symptom.\n"
-    "- Do not ask the participant a question. Do not mention or ask for any "
-    "score, label, diagnosis, PHQ category, or numeric severity.\n"
-    "Use this form: Retrieve participant utterances that provide evidence of "
-    "<target symptom>. Prioritize <direct evidence>. Optional anchors: "
-    "<0-2 anchors if useful>. Exclude <neutral background to ignore>.\n"
-    "Output exactly one retrieval query and no explanation.\n\n"
-    "Participant profile:\n{profile}\n\n"
-    "PHQ-8 aspect:\n{aspect_description}\n\n"
-    "Basic query:\n{basic_query}\n\n"
-    "Evidence retrieval query:"
-)
-
-CLINICAL_GRAPH_QUERY_PROMPT = (
-    "You are writing a clinical evidence retrieval query, not an interview "
-    "question. The query will be embedded to rank participant utterances from "
-    "a mental-health interview.\n\n"
-    "Build the query as a compact clinical evidence graph for the PHQ-8 aspect. "
-    "Include these graph nodes in natural language: target symptom, direct "
-    "first-person evidence, negation/absence evidence, duration or recent "
-    "change, functional impact, and likely neighboring context turns. Use "
-    "profile details only if they connect to symptom evidence. Exclude neutral "
-    "biography, locations, hobbies, interviewer prompts, and setup fragments.\n"
-    "Output one retrieval query beginning with 'Retrieve participant utterances'.\n\n"
-    "Participant profile:\n{profile}\n\n"
-    "PHQ-8 aspect:\n{aspect_description}\n\n"
-    "Basic query:\n{basic_query}\n\n"
-    "Clinical evidence graph retrieval query:"
-)
-
-ADAPTIVE_REFLECT_QUERY_PROMPT = (
-    "You are writing a high-recall evidence retrieval query for a clinical "
-    "interview. The query will be embedded to rank participant utterances.\n\n"
-    "Write a query that first targets direct evidence for the PHQ-8 symptom, "
-    "then explicitly asks for indirect but clinically relevant evidence, "
-    "negations, impact, recent change, and adjacent context that may explain "
-    "short answers. Avoid neutral background unless it clarifies symptom "
-    "presence or absence. Do not ask the participant a question.\n"
-    "Output exactly one retrieval query beginning with 'Retrieve participant utterances'.\n\n"
-    "Participant profile:\n{profile}\n\n"
-    "PHQ-8 aspect:\n{aspect_description}\n\n"
-    "Basic query:\n{basic_query}\n\n"
-    "Adaptive high-recall retrieval query:"
-)
-
-QUERY_PROMPTS = {
-    "aspect_evidence_v3": QUERY_PROMPT,
-    "clinical_graph_v1": CLINICAL_GRAPH_QUERY_PROMPT,
-    "adaptive_reflect_v1": ADAPTIVE_REFLECT_QUERY_PROMPT,
-}
+QUERY_PROMPT_VERSION = DEPRESSION_ASPECT_QUERY_PROMPT_VERSION
+PROFILE_PROMPT = DEPRESSION_ASPECT_PROFILE_PROMPT
+QUERY_PROMPT = DEPRESSION_ASPECT_QUERY_PROMPT
+CLINICAL_GRAPH_QUERY_PROMPT = DEPRESSION_ASPECT_CLINICAL_GRAPH_QUERY_PROMPT
+ADAPTIVE_REFLECT_QUERY_PROMPT = DEPRESSION_ASPECT_ADAPTIVE_REFLECT_QUERY_PROMPT
+QUERY_PROMPTS = DEPRESSION_ASPECT_QUERY_PROMPTS
 
 
 @dataclass(frozen=True)
@@ -387,7 +354,7 @@ class LoadedLlmHiddenBackend:
         import torch
 
         messages = [
-            {"role": "system", "content": "You are a concise clinical assistant."},
+            {"role": "system", "content": CLINICAL_ASSISTANT_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ]
         text = _chat_text(self.tokenizer, messages)
@@ -410,7 +377,7 @@ class LoadedLlmHiddenBackend:
 
     def generate_profile(self, dialogue: str) -> str:
         return self._generate(
-            f"{PROFILE_PROMPT}\n\nTranscript:\n{dialogue}",
+            build_depression_profile_prompt(dialogue),
             self.max_profile_new_tokens,
         )
 
@@ -422,10 +389,11 @@ class LoadedLlmHiddenBackend:
         aspect_description: str,
         query_prompt_version: str = QUERY_PROMPT_VERSION,
     ) -> str:
-        prompt = QUERY_PROMPTS.get(query_prompt_version, QUERY_PROMPT).format(
+        prompt = build_depression_aspect_query_prompt(
             profile=profile,
+            aspect=aspect,
             aspect_description=aspect_description,
-            basic_query=aspect,
+            query_prompt_version=query_prompt_version,
         )
         return _coerce_retrieval_query(
             self._generate(prompt, self.max_query_new_tokens),
@@ -525,7 +493,7 @@ class LocalHiddenBackend:
         import torch
 
         messages = [
-            {"role": "system", "content": "You are a concise clinical assistant."},
+            {"role": "system", "content": CLINICAL_ASSISTANT_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ]
         text = _chat_text(self.tokenizer, messages)
@@ -547,7 +515,7 @@ class LocalHiddenBackend:
 
     def generate_profile(self, dialogue: str) -> str:
         return self._generate(
-            f"{PROFILE_PROMPT}\n\nTranscript:\n{dialogue}",
+            build_depression_profile_prompt(dialogue),
             self.max_profile_new_tokens,
         )
 
@@ -559,10 +527,11 @@ class LocalHiddenBackend:
         aspect_description: str,
         query_prompt_version: str = QUERY_PROMPT_VERSION,
     ) -> str:
-        prompt = QUERY_PROMPTS.get(query_prompt_version, QUERY_PROMPT).format(
+        prompt = build_depression_aspect_query_prompt(
             profile=profile,
+            aspect=aspect,
             aspect_description=aspect_description,
-            basic_query=aspect,
+            query_prompt_version=query_prompt_version,
         )
         return _coerce_retrieval_query(
             self._generate(prompt, self.max_query_new_tokens),
@@ -634,18 +603,10 @@ class LexicalBackend:
             aspect_description=aspect_description,
         )
         if query_prompt_version == "clinical_graph_v1":
-            query = (
-                f"{query} Include direct evidence, absence evidence, duration, "
-                "change, impact, and adjacent context turns."
-            )
+            query = f"{query} {DEPRESSION_CLINICAL_GRAPH_HEURISTIC_SUFFIX}"
         elif query_prompt_version == "adaptive_reflect_v1":
-            query = (
-                f"{query} Include indirect symptom evidence, negations, impact, "
-                "recent change, and short-answer context."
-            )
-        if profile:
-            query = f"{query} Optional profile context: {profile[:160]}"
-        return query
+            query = f"{query} {DEPRESSION_ADAPTIVE_REFLECT_HEURISTIC_SUFFIX}"
+        return append_depression_optional_profile_context(query, profile)
 
     def embed_texts(self, texts: list[str]) -> np.ndarray:
         vectors = np.zeros((len(texts), self.dim), dtype=np.float32)
@@ -665,12 +626,9 @@ def _candidate_words(text: str) -> list[str]:
 
 
 def _default_evidence_query(*, aspect: str, aspect_description: str) -> str:
-    return (
-        "Retrieve participant utterances that provide evidence of "
-        f"{aspect_description}. Prioritize direct first-person statements about "
-        f"{aspect}, including symptom presence, absence, frequency, duration, "
-        "impact, or recent change. Exclude neutral background unless it also "
-        "shows this symptom."
+    return build_default_depression_evidence_query(
+        aspect=aspect,
+        aspect_description=aspect_description,
     )
 
 
@@ -705,10 +663,10 @@ def _coerce_retrieval_query(
         return fallback
 
     if not re.match(r"^(?:retrieve|find|select|rank)\b", query, flags=re.IGNORECASE):
-        return (
-            "Retrieve participant utterances that provide evidence of "
-            f"{aspect_description}. Prioritize {query}. Exclude neutral "
-            f"background unless it also shows {aspect}."
+        return build_depression_prioritized_evidence_query(
+            aspect=aspect,
+            aspect_description=aspect_description,
+            generated_query=query,
         )
     return query
 

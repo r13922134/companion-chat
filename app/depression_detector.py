@@ -26,6 +26,7 @@ try:
     from .storage import (
         attach_latest_google_form_response_to_metadata,
         enqueue_depression_job,
+        list_depression_workers,
         update_realtime_session_run_artifacts,
         update_realtime_session_run_depression,
     )
@@ -42,6 +43,7 @@ except ImportError:
     from storage import (
         attach_latest_google_form_response_to_metadata,
         enqueue_depression_job,
+        list_depression_workers,
         update_realtime_session_run_artifacts,
         update_realtime_session_run_depression,
     )
@@ -87,6 +89,42 @@ class RealtimeRunInput:
 def is_depression_detection_enabled() -> bool:
     value = str(os.environ.get("DEPRESSION_DETECTION_ENABLED", "1")).strip().lower()
     return value not in {"0", "false", "no", "off", "disabled"}
+
+
+def depression_worker_stale_seconds() -> float:
+    try:
+        return max(5.0, float(os.environ.get("DEPRESSION_WORKER_STALE_SECONDS") or 120.0))
+    except Exception:
+        return 120.0
+
+
+def parse_worker_heartbeat(value: Any) -> datetime | None:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        return datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def active_depression_workers(database_path: Path) -> list[dict[str, Any]]:
+    now = datetime.now().astimezone()
+    stale_seconds = depression_worker_stale_seconds()
+    active = []
+    for worker in list_depression_workers(database_path):
+        if str(worker.get("status") or "").strip().lower() not in {"ready", "running"}:
+            continue
+        heartbeat = parse_worker_heartbeat(worker.get("heartbeat_at"))
+        if heartbeat is None:
+            continue
+        try:
+            age_seconds = (now - heartbeat.astimezone()).total_seconds()
+        except Exception:
+            continue
+        if age_seconds <= stale_seconds:
+            active.append(worker)
+    return active
 
 
 def now_iso() -> str:
@@ -1788,6 +1826,24 @@ def queue_realtime_depression_detection(
             {"status": "disabled"},
         )
         return {"status": "disabled"}
+
+    workers = active_depression_workers(database_path)
+    if not workers:
+        message = "GPU depression worker is unavailable."
+        update_realtime_session_run_depression(
+            database_path,
+            session_hash,
+            run_id,
+            {
+                "status": "unavailable",
+                "error": message,
+                "completed_at": now_iso(),
+            },
+        )
+        return {
+            "status": "unavailable",
+            "message": message,
+        }
 
     queue = enqueue_depression_job(
         database_path,

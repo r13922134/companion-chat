@@ -54,6 +54,7 @@ from app.storage import (
     initialize_database,
     insert_google_form_response,
     list_google_form_response_summaries,
+    update_depression_worker,
     update_realtime_session_run_depression,
     upsert_realtime_session_run,
 )
@@ -496,6 +497,8 @@ def test_depression_columns_update_roundtrip(tmp_path: Path) -> None:
     assert row["depression_error"] is None
     assert row["depression_completed_at"] == "2026-06-09T01:04:03+08:00"
     assert row["archive_manifest"] == {
+        "account_id": "abc123",
+        "session_hash": "abc123",
         "schema_version": "companion-thesis-realtime-v1"
     }
     assert row["ground_truth_total_score"] == 8
@@ -600,6 +603,9 @@ def test_realtime_analytics_snapshot_includes_phq_and_predictions(tmp_path: Path
         "answer": "好幾天",
         "score": 1,
     }
+    assert snapshot["users"][0]["account_id"] == account_hash
+    assert "respondent_email" not in snapshot["users"][0]
+    assert "respondent_email" not in snapshot["runs"][0]
     assert snapshot["runs"][0]["prediction"] == 8.25
     assert snapshot["aspect_summary"][0]["mean_abs_error"] == 0.5
 
@@ -658,9 +664,10 @@ def test_google_form_responses_group_same_email_as_one_account(tmp_path: Path) -
     users = list_google_form_response_summaries(db_path)
 
     assert len(users) == 1
+    assert users[0]["account_id"] == account_hash
     assert users[0]["account_hash"] == account_hash
     assert users[0]["session_hash"] == account_hash
-    assert users[0]["respondent_email"] == "student@example.com"
+    assert "respondent_email" not in users[0]
     assert users[0]["form_hash"] == "latest_form"
     assert users[0]["form_count"] == 2
     assert users[0]["age"] == "21"
@@ -806,11 +813,117 @@ def test_initialize_database_rekeys_stale_account_hashes_by_email(tmp_path: Path
 
     initialize_database(db_path)
     users = list_google_form_response_summaries(db_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT account_id, account_hash
+            FROM google_form_responses
+            ORDER BY form_hash
+            """
+        ).fetchall()
 
     assert len(users) == 1
+    assert users[0]["account_id"] == expected_account_hash
     assert users[0]["account_hash"] == expected_account_hash
     assert users[0]["form_hash"] == "latest_form"
     assert users[0]["form_count"] == 2
+    assert {row["account_id"] for row in rows} == {expected_account_hash}
+    assert {row["account_hash"] for row in rows} == {expected_account_hash}
+
+
+def test_initialize_database_migrates_account_id_and_redacts_identity_metadata(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy_identity.sqlite3"
+    initialize_database(db_path)
+    metadata = {
+        "respondent_email": "student@example.com",
+        "selected_user": {
+            "respondent_email": "student@example.com",
+            "account_hash": "legacy123",
+            "session_hash": "legacy123",
+            "name": "Student",
+        },
+    }
+    archive_manifest = {
+        "schema_version": "companion-thesis-realtime-v1",
+        "session_hash": "legacy123",
+    }
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO realtime_sessions (
+                session_hash,
+                session_dir_name,
+                created_at,
+                updated_at,
+                metadata_json
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy123",
+                "legacy123",
+                "2026-06-08T10:00:00+08:00",
+                "2026-06-08T10:00:00+08:00",
+                json.dumps(metadata),
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO realtime_session_runs (
+                session_hash,
+                run_id,
+                session_dir_name,
+                started_at,
+                uploaded_at,
+                metadata_json,
+                archive_manifest_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy123",
+                "run-1",
+                "legacy123/run-1",
+                "2026-06-08T10:00:00+08:00",
+                "2026-06-08T10:01:00+08:00",
+                json.dumps(metadata),
+                json.dumps(archive_manifest),
+            ),
+        )
+
+    initialize_database(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        session_row = connection.execute(
+            """
+            SELECT account_id, metadata_json
+            FROM realtime_sessions
+            WHERE session_hash = ?
+            """,
+            ("legacy123",),
+        ).fetchone()
+        run_row = connection.execute(
+            """
+            SELECT account_id, metadata_json, archive_manifest_json
+            FROM realtime_session_runs
+            WHERE session_hash = ? AND run_id = ?
+            """,
+            ("legacy123", "run-1"),
+        ).fetchone()
+
+    assert session_row["account_id"] == "legacy123"
+    assert run_row["account_id"] == "legacy123"
+    session_metadata = json.loads(session_row["metadata_json"])
+    run_metadata = json.loads(run_row["metadata_json"])
+    run_manifest = json.loads(run_row["archive_manifest_json"])
+    assert "respondent_email" not in session_metadata
+    assert "respondent_email" not in session_metadata["selected_user"]
+    assert session_metadata["selected_user"]["account_id"] == "legacy123"
+    assert "respondent_email" not in run_metadata
+    assert "respondent_email" not in run_metadata["selected_user"]
+    assert run_metadata["selected_user"]["account_id"] == "legacy123"
+    assert run_manifest["account_id"] == "legacy123"
+    assert run_manifest["session_hash"] == "legacy123"
 
 
 def test_latest_form_phq8_is_used_for_account_ground_truth(tmp_path: Path) -> None:
@@ -881,7 +994,10 @@ def test_latest_form_phq8_is_used_for_account_ground_truth(tmp_path: Path) -> No
 
     assert changed is True
     assert metadata["selected_user"]["form_hash"] == "latest_form"
+    assert metadata["selected_user"]["account_id"] == account_hash
     assert metadata["selected_user"]["session_hash"] == account_hash
+    assert "respondent_email" not in metadata
+    assert "respondent_email" not in metadata["selected_user"]
     assert metadata["selected_user"]["phq8"]["total_score"] == 12
 
     upsert_realtime_session_run(
@@ -926,6 +1042,10 @@ def test_latest_form_phq8_is_used_for_account_ground_truth(tmp_path: Path) -> No
     assert snapshot["summary"]["user_count"] == 1
     assert snapshot["users"][0]["form_count"] == 2
     assert snapshot["users"][0]["phq8"]["total_score"] == 12
+    assert snapshot["users"][0]["account_id"] == account_hash
+    assert "respondent_email" not in snapshot["users"][0]
+    assert "respondent_email" not in snapshot["runs"][0]
+    assert snapshot["runs"][0]["account_id"] == account_hash
     assert snapshot["runs"][0]["user_key"] == account_hash
     assert snapshot["runs"][0]["form_hash"] == "latest_form"
     assert snapshot["runs"][0]["ground_truth"] == 12
@@ -985,6 +1105,9 @@ def test_analytics_keeps_run_time_ground_truth_snapshot_after_new_form(tmp_path:
     )
     assert changed is True
     assert old_metadata["selected_user"]["form_hash"] == "older_form"
+    assert old_metadata["selected_user"]["account_id"] == account_hash
+    assert "respondent_email" not in old_metadata
+    assert "respondent_email" not in old_metadata["selected_user"]
 
     upsert_realtime_session_run(
         db_path,
@@ -1043,6 +1166,10 @@ def test_analytics_keeps_run_time_ground_truth_snapshot_after_new_form(tmp_path:
     assert snapshot["summary"]["user_count"] == 1
     assert snapshot["users"][0]["form_count"] == 2
     assert snapshot["users"][0]["phq8"]["total_score"] == 12
+    assert snapshot["users"][0]["account_id"] == account_hash
+    assert "respondent_email" not in snapshot["users"][0]
+    assert "respondent_email" not in snapshot["runs"][0]
+    assert snapshot["runs"][0]["account_id"] == account_hash
     assert snapshot["runs"][0]["user_key"] == account_hash
     assert snapshot["runs"][0]["form_hash"] == "older_form"
     assert snapshot["runs"][0]["latest_form_hash"] == "latest_form"
@@ -1110,9 +1237,53 @@ def test_sqlite_depression_queue_claims_each_job_once(tmp_path: Path) -> None:
     assert row["depression_started_at"]
 
 
-def test_realtime_queue_function_only_persists_job(tmp_path: Path) -> None:
+def _register_ready_depression_worker(db_path: Path) -> None:
+    update_depression_worker(
+        db_path,
+        worker_id="test-worker:gpu-0",
+        gpu_id="0",
+        pid=1234,
+        hostname="test-host",
+        status="ready",
+        started_at="2026-06-09T01:00:00+08:00",
+    )
+
+
+def test_realtime_queue_function_marks_unavailable_without_worker(tmp_path: Path) -> None:
     db_path = tmp_path / "app.sqlite3"
     initialize_database(db_path)
+    run_id = "20260609_010203_000"
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+    upsert_realtime_session_run(
+        db_path,
+        {
+            "session_hash": "abc123",
+            "run_id": run_id,
+            "session_dir_name": f"abc123/{run_id}",
+            "started_at": "2026-06-09T01:02:03+08:00",
+            "uploaded_at": "2026-06-09T01:03:03+08:00",
+        },
+    )
+
+    result = queue_realtime_depression_detection(
+        db_path,
+        "abc123",
+        run_id,
+        session_dir,
+    )
+
+    assert result["status"] == "unavailable"
+    assert get_depression_job(db_path, "abc123", run_id) is None
+    row = get_realtime_session_run(db_path, "abc123", run_id)
+    assert row["depression_status"] == "unavailable"
+    assert row["depression_error"] == "GPU depression worker is unavailable."
+
+
+def test_realtime_queue_function_only_persists_job_with_active_worker(tmp_path: Path) -> None:
+    db_path = tmp_path / "app.sqlite3"
+    initialize_database(db_path)
+    _register_ready_depression_worker(db_path)
     run_id = "20260609_010203_000"
     session_dir = tmp_path / "run"
     session_dir.mkdir()

@@ -122,7 +122,25 @@ def _normalize_phq8(phq8: Any) -> dict[str, Any]:
 
 def _selected_user_from_metadata(metadata: Any) -> dict[str, Any]:
     metadata = _safe_dict(metadata)
-    return _safe_dict(metadata.get("selected_user"))
+    selected_user = dict(_safe_dict(metadata.get("selected_user")))
+    selected_user.pop("respondent_email", None)
+    selected_user.pop("email", None)
+    account_id = str(
+        selected_user.get("account_id")
+        or selected_user.get("account_hash")
+        or selected_user.get("session_hash")
+        or selected_user.get("user_key")
+        or metadata.get("account_id")
+        or metadata.get("account_hash")
+        or metadata.get("session_hash")
+        or ""
+    ).strip()
+    if account_id:
+        selected_user["account_id"] = account_id
+        selected_user["account_hash"] = account_id
+        selected_user["session_hash"] = account_id
+        selected_user["user_key"] = account_id
+    return selected_user
 
 
 def _best_user_key(
@@ -134,6 +152,7 @@ def _best_user_key(
     selected_form_hash = str(selected_user.get("latest_form_hash") or selected_user.get("form_hash") or "").strip()
     selected_form = forms_by_hash.get(selected_form_hash, {})
     candidates = [
+        selected_user.get("account_id"),
         selected_user.get("account_hash"),
         selected_user.get("user_key"),
         session_hash,
@@ -199,6 +218,7 @@ def _load_forms(db_path: Path) -> dict[str, dict[str, Any]]:
                 form_id,
                 response_id,
                 respondent_email,
+                account_id,
                 account_hash,
                 name,
                 age,
@@ -218,16 +238,16 @@ def _load_forms(db_path: Path) -> dict[str, dict[str, Any]]:
         if not form_hash:
             continue
         respondent_email = str(row["respondent_email"] or "").strip().lower()
-        account_hash = google_form_account_key(
+        account_id = str(row["account_id"] or "").strip() or google_form_account_key(
             respondent_email,
             str(row["account_hash"] or "").strip() or form_hash,
         )
         phq8 = _normalize_phq8(load_json(row["phq8_json"], {}))
         forms[form_hash] = {
-            "user_key": account_hash,
-            "account_hash": account_hash,
-            "session_hash": account_hash,
-            "respondent_email": respondent_email,
+            "user_key": account_id,
+            "account_id": account_id,
+            "account_hash": account_id,
+            "session_hash": account_id,
             "form_hash": form_hash,
             "latest_form_hash": form_hash,
             "form_dir_name": row["form_dir_name"] or "",
@@ -251,6 +271,7 @@ def _load_runs(db_path: Path) -> list[dict[str, Any]]:
             """
             SELECT
                 session_hash,
+                account_id,
                 run_id,
                 session_dir_name,
                 started_at,
@@ -299,6 +320,7 @@ def _load_runs(db_path: Path) -> list[dict[str, Any]]:
         runs.append(
             {
                 "session_hash": row["session_hash"] or "",
+                "account_id": row["account_id"] or row["session_hash"] or "",
                 "run_id": row["run_id"] or "",
                 "session_dir_name": row["session_dir_name"] or "",
                 "started_at": row["started_at"] or "",
@@ -363,11 +385,11 @@ def _build_users(
     form_counts_by_account: dict[str, int] = {}
 
     for form in forms_by_hash.values():
-        account_hash = str(form.get("account_hash") or form.get("form_hash") or "").strip()
-        if not account_hash:
+        account_id = str(form.get("account_id") or form.get("account_hash") or form.get("form_hash") or "").strip()
+        if not account_id:
             continue
-        form_counts_by_account[account_hash] = form_counts_by_account.get(account_hash, 0) + 1
-        current = latest_forms_by_account.get(account_hash)
+        form_counts_by_account[account_id] = form_counts_by_account.get(account_id, 0) + 1
+        current = latest_forms_by_account.get(account_id)
         if current is None or (
             _iso_sort_key(form.get("submitted_at")),
             _iso_sort_key(form.get("received_at")),
@@ -375,18 +397,18 @@ def _build_users(
             _iso_sort_key(current.get("submitted_at")),
             _iso_sort_key(current.get("received_at")),
         ):
-            latest_forms_by_account[account_hash] = form
+            latest_forms_by_account[account_id] = form
 
-    for account_hash, form in latest_forms_by_account.items():
-        users[account_hash] = {
-            "user_key": account_hash,
-            "account_hash": account_hash,
-            "session_hash": account_hash,
-            "respondent_email": form.get("respondent_email") or "",
+    for account_id, form in latest_forms_by_account.items():
+        users[account_id] = {
+            "user_key": account_id,
+            "account_id": account_id,
+            "account_hash": account_id,
+            "session_hash": account_id,
             "form_hash": form.get("form_hash") or "",
             "latest_form_hash": form.get("form_hash") or "",
-            "form_count": form_counts_by_account.get(account_hash, 1),
-            "name": form.get("name") or account_hash[:8],
+            "form_count": form_counts_by_account.get(account_id, 1),
+            "name": form.get("name") or account_id[:8],
             "age": form.get("age") or "",
             "submitted_at": form.get("submitted_at") or "",
             "received_at": form.get("received_at") or "",
@@ -397,7 +419,7 @@ def _build_users(
     for run in runs:
         selected_user = _safe_dict(run.get("selected_user"))
         user_key = _best_user_key(
-            session_hash=str(run.get("session_hash") or ""),
+            session_hash=str(run.get("account_id") or run.get("session_hash") or ""),
             selected_user=selected_user,
             forms_by_hash=forms_by_hash,
         )
@@ -407,9 +429,9 @@ def _build_users(
                 selected_user.get("latest_form_hash") or selected_user.get("form_hash") or ""
             ).strip()
             selected_form = forms_by_hash.get(selected_form_hash, {})
-            selected_account_hash = str(selected_form.get("account_hash") or "").strip()
-            if selected_account_hash:
-                user_key = selected_account_hash
+            selected_account_id = str(selected_form.get("account_id") or selected_form.get("account_hash") or "").strip()
+            if selected_account_id:
+                user_key = selected_account_id
                 form = latest_forms_by_account.get(user_key) or selected_form
             else:
                 form = {}
@@ -417,9 +439,9 @@ def _build_users(
             selected_phq = selected_user.get("phq8")
             users[user_key] = {
                 "user_key": user_key,
-                "account_hash": str(selected_user.get("account_hash") or user_key),
+                "account_id": str(selected_user.get("account_id") or selected_user.get("account_hash") or user_key),
+                "account_hash": str(selected_user.get("account_id") or selected_user.get("account_hash") or user_key),
                 "session_hash": str(selected_user.get("session_hash") or user_key),
-                "respondent_email": str(selected_user.get("respondent_email") or form.get("respondent_email") or ""),
                 "form_hash": str(form.get("form_hash") or selected_user.get("form_hash") or user_key),
                 "latest_form_hash": str(form.get("form_hash") or selected_user.get("latest_form_hash") or selected_user.get("form_hash") or ""),
                 "form_count": form_counts_by_account.get(user_key, 0),
@@ -451,8 +473,8 @@ def _build_users(
             run_form_hash = str(run_form.get("form_hash") or "").strip()
         run_copy = {key: value for key, value in run.items() if key != "selected_user"}
         run_copy["user_key"] = user_key
+        run_copy["account_id"] = user.get("account_id") or user.get("account_hash") or user_key
         run_copy["account_hash"] = user.get("account_hash") or user_key
-        run_copy["respondent_email"] = user.get("respondent_email") or ""
         run_copy["form_hash"] = run_form_hash
         run_copy["gt_form_hash"] = run_form_hash
         run_copy["latest_form_hash"] = user.get("latest_form_hash") or user.get("form_hash") or ""

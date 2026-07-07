@@ -41,8 +41,130 @@ def google_form_account_hash(respondent_email: Any) -> str:
     return f"acct_{digest}"
 
 
+def google_form_account_id(respondent_email: Any) -> str:
+    return google_form_account_hash(respondent_email)
+
+
 def google_form_account_key(respondent_email: Any, fallback_form_hash: Any = "") -> str:
-    return google_form_account_hash(respondent_email) or str(fallback_form_hash or "").strip()
+    return google_form_account_id(respondent_email) or str(fallback_form_hash or "").strip()
+
+
+def normalize_account_id(value: Any) -> str:
+    return "".join(ch for ch in str(value or "").strip() if ch.isalnum() or ch in {"_", "-"})
+
+
+def _strip_private_identity_fields(value: dict[str, Any]) -> dict[str, Any]:
+    cleaned = dict(value)
+    cleaned.pop("respondent_email", None)
+    cleaned.pop("email", None)
+    return cleaned
+
+
+def _canonical_identity_dict(value: dict[str, Any], account_id: Any = "") -> dict[str, Any]:
+    cleaned = _strip_private_identity_fields(value)
+    canonical_id = normalize_account_id(
+        account_id
+        or cleaned.get("account_id")
+        or cleaned.get("account_hash")
+        or cleaned.get("session_hash")
+        or cleaned.get("user_key")
+    )
+    if canonical_id:
+        cleaned["account_id"] = canonical_id
+        cleaned["account_hash"] = canonical_id
+        cleaned["session_hash"] = canonical_id
+        cleaned["user_key"] = canonical_id
+    return cleaned
+
+
+def public_google_form_user(value: dict[str, Any]) -> dict[str, Any]:
+    return _canonical_identity_dict(value, value.get("account_id") or value.get("account_hash"))
+
+
+def normalize_metadata_identity(metadata: Any, account_id: Any = "") -> dict[str, Any]:
+    metadata_dict = dict(metadata) if isinstance(metadata, dict) else {}
+    selected_user = metadata_dict.get("selected_user")
+    selected_user = dict(selected_user) if isinstance(selected_user, dict) else {}
+    canonical_id = normalize_account_id(
+        account_id
+        or selected_user.get("account_id")
+        or selected_user.get("account_hash")
+        or selected_user.get("session_hash")
+        or selected_user.get("user_key")
+        or metadata_dict.get("account_id")
+        or metadata_dict.get("account_hash")
+        or metadata_dict.get("session_hash")
+    )
+    if selected_user:
+        metadata_dict["selected_user"] = _canonical_identity_dict(selected_user, canonical_id)
+    metadata_dict.pop("respondent_email", None)
+    metadata_dict.pop("email", None)
+    if canonical_id:
+        metadata_dict["account_id"] = canonical_id
+        metadata_dict["account_hash"] = canonical_id
+        metadata_dict["session_hash"] = canonical_id
+    return metadata_dict
+
+
+def _normalize_metadata_json(value: Any, account_id: str) -> str | None:
+    metadata = load_json(value, None)
+    if not isinstance(metadata, dict):
+        return value
+    cleaned = normalize_metadata_identity(metadata, account_id)
+    if cleaned == metadata:
+        return value
+    return dump_json(cleaned)
+
+
+def _normalize_archive_manifest_json(value: Any, account_id: str) -> str | None:
+    manifest = load_json(value, None)
+    if not isinstance(manifest, dict):
+        return value
+    cleaned = dict(manifest)
+    cleaned["account_id"] = account_id
+    cleaned.setdefault("session_hash", account_id)
+    if cleaned == manifest:
+        return value
+    return dump_json(cleaned)
+
+
+def _migrate_identity_metadata(connection: sqlite3.Connection, table_name: str) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if "metadata_json" not in columns:
+        return
+    id_column = "account_id" if "account_id" in columns else "session_hash"
+    select_columns = ["rowid AS _rowid", id_column, "metadata_json"]
+    has_archive = "archive_manifest_json" in columns
+    if has_archive:
+        select_columns.append("archive_manifest_json")
+    rows = connection.execute(
+        f"SELECT {', '.join(select_columns)} FROM {table_name}"
+    ).fetchall()
+    for row in rows:
+        account_id = normalize_account_id(row[id_column])
+        new_metadata_json = _normalize_metadata_json(row["metadata_json"], account_id)
+        updates = []
+        params: list[Any] = []
+        if new_metadata_json != row["metadata_json"]:
+            updates.append("metadata_json = ?")
+            params.append(new_metadata_json)
+        if has_archive:
+            new_archive_json = _normalize_archive_manifest_json(
+                row["archive_manifest_json"],
+                account_id,
+            )
+            if new_archive_json != row["archive_manifest_json"]:
+                updates.append("archive_manifest_json = ?")
+                params.append(new_archive_json)
+        if updates:
+            params.append(row["_rowid"])
+            connection.execute(
+                f"UPDATE {table_name} SET {', '.join(updates)} WHERE rowid = ?",
+                params,
+            )
 
 
 def ensure_column(connection: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
@@ -66,6 +188,7 @@ def initialize_database(db_path: Path) -> None:
                 form_id TEXT NOT NULL DEFAULT '',
                 response_id TEXT NOT NULL DEFAULT '',
                 respondent_email TEXT NOT NULL DEFAULT '',
+                account_id TEXT NOT NULL DEFAULT '',
                 account_hash TEXT NOT NULL DEFAULT '',
                 submitted_at TEXT NOT NULL,
                 received_at TEXT NOT NULL,
@@ -83,6 +206,7 @@ def initialize_database(db_path: Path) -> None:
 
             CREATE TABLE IF NOT EXISTS realtime_sessions (
                 session_hash TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL DEFAULT '',
                 session_dir_name TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
@@ -101,6 +225,7 @@ def initialize_database(db_path: Path) -> None:
             CREATE TABLE IF NOT EXISTS realtime_session_runs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_hash TEXT NOT NULL,
+                account_id TEXT NOT NULL DEFAULT '',
                 run_id TEXT NOT NULL,
                 session_dir_name TEXT NOT NULL,
                 started_at TEXT NOT NULL,
@@ -141,6 +266,7 @@ def initialize_database(db_path: Path) -> None:
             CREATE TABLE IF NOT EXISTS depression_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_hash TEXT NOT NULL,
+                account_id TEXT NOT NULL DEFAULT '',
                 run_id TEXT NOT NULL,
                 session_dir TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'queued',
@@ -183,6 +309,7 @@ def initialize_database(db_path: Path) -> None:
             CREATE TABLE IF NOT EXISTS feedback_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_hash TEXT NOT NULL,
+                account_id TEXT NOT NULL DEFAULT '',
                 item_id TEXT,
                 response_text TEXT,
                 feedback_text TEXT NOT NULL,
@@ -204,8 +331,20 @@ def initialize_database(db_path: Path) -> None:
         ensure_column(
             connection,
             "realtime_sessions",
+            "account_id",
+            "TEXT NOT NULL DEFAULT ''",
+        )
+        ensure_column(
+            connection,
+            "realtime_sessions",
             "saved_file_paths_json",
             "TEXT NOT NULL DEFAULT '[]'",
+        )
+        ensure_column(
+            connection,
+            "realtime_session_runs",
+            "account_id",
+            "TEXT NOT NULL DEFAULT ''",
         )
         ensure_column(
             connection,
@@ -242,7 +381,25 @@ def initialize_database(db_path: Path) -> None:
         ensure_column(
             connection,
             "google_form_responses",
+            "account_id",
+            "TEXT NOT NULL DEFAULT ''",
+        )
+        ensure_column(
+            connection,
+            "google_form_responses",
             "account_hash",
+            "TEXT NOT NULL DEFAULT ''",
+        )
+        ensure_column(
+            connection,
+            "depression_jobs",
+            "account_id",
+            "TEXT NOT NULL DEFAULT ''",
+        )
+        ensure_column(
+            connection,
+            "feedback_records",
+            "account_id",
             "TEXT NOT NULL DEFAULT ''",
         )
         connection.execute(
@@ -253,31 +410,90 @@ def initialize_database(db_path: Path) -> None:
         )
         connection.execute(
             """
+            UPDATE google_form_responses
+            SET respondent_email = lower(trim(respondent_email))
+            WHERE respondent_email IS NOT NULL
+            """
+        )
+        connection.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_google_form_responses_account_received_at
                 ON google_form_responses(account_hash, received_at DESC, submitted_at DESC)
             """
         )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_google_form_responses_account_id_received_at
+                ON google_form_responses(account_id, received_at DESC, submitted_at DESC)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_realtime_session_runs_account_started
+                ON realtime_session_runs(account_id, started_at DESC)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_feedback_records_account_id
+                ON feedback_records(account_id, updated_at DESC)
+            """
+        )
         rows = connection.execute(
             """
-            SELECT form_hash, respondent_email, account_hash
+            SELECT form_hash, respondent_email, account_id, account_hash
             FROM google_form_responses
             """
         ).fetchall()
         for row in rows:
-            account_hash = google_form_account_key(
+            account_id = normalize_account_id(row["account_id"]) or google_form_account_key(
                 row["respondent_email"],
-                row["form_hash"],
+                row["account_hash"] or row["form_hash"],
             )
-            if account_hash == str(row["account_hash"] or ""):
+            if (
+                account_id == str(row["account_id"] or "")
+                and account_id == str(row["account_hash"] or "")
+            ):
                 continue
             connection.execute(
                 """
                 UPDATE google_form_responses
-                SET account_hash = ?
+                SET account_id = ?,
+                    account_hash = ?
                 WHERE form_hash = ?
                 """,
-                (account_hash, row["form_hash"]),
+                (account_id, account_id, row["form_hash"]),
             )
+        connection.execute(
+            """
+            UPDATE realtime_sessions
+            SET account_id = session_hash
+            WHERE trim(account_id) = ''
+            """
+        )
+        connection.execute(
+            """
+            UPDATE realtime_session_runs
+            SET account_id = session_hash
+            WHERE trim(account_id) = ''
+            """
+        )
+        connection.execute(
+            """
+            UPDATE depression_jobs
+            SET account_id = session_hash
+            WHERE trim(account_id) = ''
+            """
+        )
+        connection.execute(
+            """
+            UPDATE feedback_records
+            SET account_id = session_hash
+            WHERE trim(account_id) = ''
+            """
+        )
+        _migrate_identity_metadata(connection, "realtime_sessions")
+        _migrate_identity_metadata(connection, "realtime_session_runs")
 
 
 def dump_json(value: Any) -> str:
@@ -298,7 +514,7 @@ def insert_google_form_response(db_path: Path, record: dict[str, Any]) -> None:
     respondent_email = normalize_respondent_email(record.get("respondent_email"))
     if not respondent_email:
         raise ValueError("respondent_email is required for google form responses")
-    account_hash = google_form_account_key(
+    account_id = normalize_account_id(record.get("account_id")) or google_form_account_key(
         respondent_email,
         str(record.get("account_hash") or "").strip() or form_hash,
     )
@@ -312,6 +528,7 @@ def insert_google_form_response(db_path: Path, record: dict[str, Any]) -> None:
                 form_id,
                 response_id,
                 respondent_email,
+                account_id,
                 account_hash,
                 submitted_at,
                 received_at,
@@ -322,13 +539,14 @@ def insert_google_form_response(db_path: Path, record: dict[str, Any]) -> None:
                 phq8_json,
                 remote_addr,
                 user_agent
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(form_hash) DO UPDATE SET
                 form_dir_name = excluded.form_dir_name,
                 form_title = excluded.form_title,
                 form_id = excluded.form_id,
                 response_id = excluded.response_id,
                 respondent_email = excluded.respondent_email,
+                account_id = excluded.account_id,
                 account_hash = excluded.account_hash,
                 submitted_at = excluded.submitted_at,
                 received_at = excluded.received_at,
@@ -347,7 +565,8 @@ def insert_google_form_response(db_path: Path, record: dict[str, Any]) -> None:
                 record.get("form_id") or "",
                 record.get("response_id") or "",
                 respondent_email,
-                account_hash,
+                account_id,
+                account_id,
                 record.get("submitted_at") or "",
                 record.get("received_at") or "",
                 record.get("name") or "",
@@ -365,14 +584,15 @@ def _google_form_response_from_row(row: sqlite3.Row) -> dict[str, Any]:
     phq8 = load_json(row["phq8_json"], {})
     respondent_email = normalize_respondent_email(row["respondent_email"])
     form_hash = row["form_hash"] or ""
-    account_hash = google_form_account_key(
+    account_id = normalize_account_id(row["account_id"]) or google_form_account_key(
         respondent_email,
         row["account_hash"] or form_hash,
     )
     return {
-        "user_key": account_hash,
-        "account_hash": account_hash,
-        "session_hash": account_hash,
+        "user_key": account_id,
+        "account_id": account_id,
+        "account_hash": account_id,
+        "session_hash": account_id,
         "respondent_email": respondent_email,
         "form_hash": form_hash,
         "latest_form_hash": form_hash,
@@ -397,24 +617,26 @@ def _google_form_response_from_row(row: sqlite3.Row) -> dict[str, Any]:
 def get_latest_google_form_response_for_account(
     db_path: Path,
     *,
+    account_id: Any = "",
     account_hash: Any = "",
     respondent_email: Any = "",
     form_hash: Any = "",
 ) -> Optional[dict[str, Any]]:
     normalized_email = normalize_respondent_email(respondent_email)
-    candidate_account_hashes = []
+    candidate_account_ids = []
     for candidate in (
+        account_id,
         account_hash,
-        google_form_account_hash(normalized_email),
+        google_form_account_id(normalized_email),
         form_hash,
     ):
         key = str(candidate or "").strip()
-        if key and key not in candidate_account_hashes:
-            candidate_account_hashes.append(key)
+        if key and key not in candidate_account_ids:
+            candidate_account_ids.append(key)
 
     with connect_database(db_path) as connection:
         row = None
-        for candidate in candidate_account_hashes:
+        for candidate in candidate_account_ids:
             row = connection.execute(
                 """
                 SELECT
@@ -424,6 +646,7 @@ def get_latest_google_form_response_for_account(
                     form_id,
                     response_id,
                     respondent_email,
+                    account_id,
                     account_hash,
                     submitted_at,
                     received_at,
@@ -433,11 +656,11 @@ def get_latest_google_form_response_for_account(
                     fields_json,
                     phq8_json
                 FROM google_form_responses
-                WHERE account_hash = ?
+                WHERE account_id = ? OR account_hash = ?
                 ORDER BY submitted_at DESC, received_at DESC, form_dir_name DESC
                 LIMIT 1
                 """,
-                (candidate,),
+                (candidate, candidate),
             ).fetchone()
             if row is not None:
                 return _google_form_response_from_row(row)
@@ -452,6 +675,7 @@ def get_latest_google_form_response_for_account(
                     form_id,
                     response_id,
                     respondent_email,
+                    account_id,
                     account_hash,
                     submitted_at,
                     received_at,
@@ -481,6 +705,7 @@ def get_latest_google_form_response_for_account(
                     form_id,
                     response_id,
                     respondent_email,
+                    account_id,
                     account_hash,
                     submitted_at,
                     received_at,
@@ -502,14 +727,16 @@ def get_latest_google_form_response_for_account(
 
 
 def google_form_response_to_selected_user(response: dict[str, Any]) -> dict[str, Any]:
-    account_hash = str(response.get("account_hash") or response.get("user_key") or "").strip()
+    account_id = normalize_account_id(
+        response.get("account_id") or response.get("account_hash") or response.get("user_key")
+    )
     form_hash = str(response.get("form_hash") or "").strip()
     phq8 = response.get("phq8") if isinstance(response.get("phq8"), dict) else {}
     return {
-        "user_key": account_hash or form_hash,
-        "account_hash": account_hash or form_hash,
-        "session_hash": account_hash or form_hash,
-        "respondent_email": normalize_respondent_email(response.get("respondent_email")),
+        "user_key": account_id or form_hash,
+        "account_id": account_id or form_hash,
+        "account_hash": account_id or form_hash,
+        "session_hash": account_id or form_hash,
         "form_hash": form_hash,
         "latest_form_hash": str(response.get("latest_form_hash") or form_hash),
         "form_dir_name": response.get("form_dir_name") or "",
@@ -537,9 +764,11 @@ def latest_google_form_response_for_metadata(
     selected_user = selected_user if isinstance(selected_user, dict) else {}
 
     account_candidates = [
+        selected_user.get("account_id"),
         selected_user.get("account_hash"),
         selected_user.get("user_key"),
         selected_user.get("session_hash"),
+        metadata_dict.get("account_id"),
         metadata_dict.get("account_hash"),
         session_hash,
     ]
@@ -559,6 +788,7 @@ def latest_google_form_response_for_metadata(
         seen.add(key)
         response = get_latest_google_form_response_for_account(
             db_path,
+            account_id=key,
             account_hash=key,
             respondent_email=email,
             form_hash=form_hash,
@@ -580,22 +810,27 @@ def attach_latest_google_form_response_to_metadata(
     metadata: Any = None,
 ) -> tuple[dict[str, Any], bool]:
     metadata_dict = dict(metadata) if isinstance(metadata, dict) else {}
+    original_metadata = dict(metadata_dict)
     response = latest_google_form_response_for_metadata(
         db_path,
         session_hash=session_hash,
         metadata=metadata_dict,
     )
     if response is None:
-        return metadata_dict, False
+        cleaned_metadata = normalize_metadata_identity(metadata_dict, session_hash)
+        return cleaned_metadata, cleaned_metadata != original_metadata
 
     selected_user = metadata_dict.get("selected_user")
     selected_user = dict(selected_user) if isinstance(selected_user, dict) else {}
     latest_user = google_form_response_to_selected_user(response)
-    updated_user = {**selected_user, **latest_user}
-    changed = updated_user != selected_user
+    updated_user = _canonical_identity_dict(
+        {**selected_user, **latest_user},
+        latest_user.get("account_id"),
+    )
     metadata_dict["selected_user"] = updated_user
+    metadata_dict = normalize_metadata_identity(metadata_dict, latest_user.get("account_id"))
     metadata_dict["ground_truth_source"] = "google_form_responses.latest_by_account.phq8"
-    return metadata_dict, changed
+    return metadata_dict, metadata_dict != original_metadata
 
 
 def list_google_form_response_summaries(db_path: Path) -> list[dict[str, Any]]:
@@ -609,6 +844,7 @@ def list_google_form_response_summaries(db_path: Path) -> list[dict[str, Any]]:
                 form_id,
                 response_id,
                 respondent_email,
+                account_id,
                 account_hash,
                 name,
                 age,
@@ -625,11 +861,12 @@ def list_google_form_response_summaries(db_path: Path) -> list[dict[str, Any]]:
     summaries_by_account: dict[str, dict[str, Any]] = {}
     for row in rows:
         summary = _google_form_response_from_row(row)
-        account_hash = summary["account_hash"] or summary["form_hash"]
-        if account_hash not in summaries_by_account:
-            summary["form_count"] = 0
-            summaries_by_account[account_hash] = summary
-        summaries_by_account[account_hash]["form_count"] += 1
+        account_id = summary["account_id"] or summary["account_hash"] or summary["form_hash"]
+        public_summary = public_google_form_user(summary)
+        if account_id not in summaries_by_account:
+            public_summary["form_count"] = 0
+            summaries_by_account[account_id] = public_summary
+        summaries_by_account[account_id]["form_count"] += 1
     return list(summaries_by_account.values())
 
 
@@ -640,12 +877,19 @@ def upsert_realtime_session(db_path: Path, record: dict[str, Any]) -> None:
     saved_file_paths = record.get("saved_file_paths")
     if not isinstance(saved_file_paths, list):
         saved_file_paths = []
+    account_id = normalize_account_id(
+        record.get("account_id") or record.get("session_hash")
+    )
+    metadata = record.get("metadata")
+    if metadata is not None:
+        metadata = normalize_metadata_identity(metadata, account_id)
 
     with connect_database(db_path) as connection:
         connection.execute(
             """
             INSERT INTO realtime_sessions (
                 session_hash,
+                account_id,
                 session_dir_name,
                 created_at,
                 updated_at,
@@ -656,8 +900,9 @@ def upsert_realtime_session(db_path: Path, record: dict[str, Any]) -> None:
                 transcript_text,
                 saved_file_names_json,
                 saved_file_paths_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_hash) DO UPDATE SET
+                account_id = excluded.account_id,
                 session_dir_name = excluded.session_dir_name,
                 updated_at = excluded.updated_at,
                 remote_addr = excluded.remote_addr,
@@ -680,12 +925,13 @@ def upsert_realtime_session(db_path: Path, record: dict[str, Any]) -> None:
             """,
             (
                 record.get("session_hash") or "",
+                account_id,
                 record.get("session_dir_name") or "",
                 record.get("created_at") or record.get("updated_at") or "",
                 record.get("updated_at") or "",
                 record.get("remote_addr"),
                 record.get("user_agent"),
-                dump_json(record.get("metadata")) if record.get("metadata") is not None else None,
+                dump_json(metadata) if metadata is not None else None,
                 dump_json(record.get("transcript")) if record.get("transcript") is not None else None,
                 record.get("transcript_text"),
                 dump_json(saved_file_names),
@@ -701,12 +947,24 @@ def upsert_realtime_session_run(db_path: Path, record: dict[str, Any]) -> None:
     saved_file_paths = record.get("saved_file_paths")
     if not isinstance(saved_file_paths, list):
         saved_file_paths = []
+    account_id = normalize_account_id(
+        record.get("account_id") or record.get("session_hash")
+    )
+    metadata = record.get("metadata")
+    if metadata is not None:
+        metadata = normalize_metadata_identity(metadata, account_id)
+    archive_manifest = record.get("archive_manifest")
+    if isinstance(archive_manifest, dict):
+        archive_manifest = dict(archive_manifest)
+        archive_manifest["account_id"] = account_id
+        archive_manifest.setdefault("session_hash", account_id)
 
     with connect_database(db_path) as connection:
         connection.execute(
             """
             INSERT INTO realtime_session_runs (
                 session_hash,
+                account_id,
                 run_id,
                 session_dir_name,
                 started_at,
@@ -722,8 +980,9 @@ def upsert_realtime_session_run(db_path: Path, record: dict[str, Any]) -> None:
                 archive_manifest_json,
                 ground_truth_total_score,
                 ground_truth_binary
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_hash, run_id) DO UPDATE SET
+                account_id = excluded.account_id,
                 session_dir_name = excluded.session_dir_name,
                 started_at = excluded.started_at,
                 ended_at = COALESCE(excluded.ended_at, realtime_session_runs.ended_at),
@@ -760,6 +1019,7 @@ def upsert_realtime_session_run(db_path: Path, record: dict[str, Any]) -> None:
             """,
             (
                 record.get("session_hash") or "",
+                account_id,
                 record.get("run_id") or "",
                 record.get("session_dir_name") or "",
                 record.get("started_at") or record.get("uploaded_at") or "",
@@ -767,14 +1027,14 @@ def upsert_realtime_session_run(db_path: Path, record: dict[str, Any]) -> None:
                 record.get("uploaded_at") or "",
                 record.get("remote_addr"),
                 record.get("user_agent"),
-                dump_json(record.get("metadata")) if record.get("metadata") is not None else None,
+                dump_json(metadata) if metadata is not None else None,
                 dump_json(record.get("transcript")) if record.get("transcript") is not None else None,
                 record.get("transcript_text"),
                 dump_json(saved_file_names),
                 dump_json(saved_file_paths),
                 (
-                    dump_json(record.get("archive_manifest"))
-                    if record.get("archive_manifest") is not None
+                    dump_json(archive_manifest)
+                    if archive_manifest is not None
                     else None
                 ),
                 record.get("ground_truth_total_score"),
@@ -797,6 +1057,7 @@ def get_realtime_session_run(
             """
             SELECT
                 session_hash,
+                account_id,
                 run_id,
                 session_dir_name,
                 started_at,
@@ -835,6 +1096,7 @@ def get_realtime_session_run(
         return None
     return {
         "session_hash": row["session_hash"] or "",
+        "account_id": row["account_id"] or row["session_hash"] or "",
         "run_id": row["run_id"] or "",
         "session_dir_name": row["session_dir_name"] or "",
         "started_at": row["started_at"] or "",
@@ -960,6 +1222,7 @@ def enqueue_depression_job(
     max_attempts: int = 3,
     priority: int = 0,
 ) -> dict[str, Any]:
+    account_id = normalize_account_id(session_hash)
     queued_at = _now_iso()
     available_at_epoch = time.time()
     max_attempts = max(1, int(max_attempts))
@@ -979,6 +1242,7 @@ def enqueue_depression_job(
                 """
                 INSERT INTO depression_jobs (
                     session_hash,
+                    account_id,
                     run_id,
                     session_dir,
                     status,
@@ -989,10 +1253,11 @@ def enqueue_depression_job(
                     available_at_epoch,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, ?, 'queued', ?, 0, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, 'queued', ?, 0, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_hash,
+                    account_id,
                     run_id,
                     str(Path(session_dir).resolve()),
                     priority,
@@ -1020,6 +1285,7 @@ def enqueue_depression_job(
                 """
                 UPDATE depression_jobs
                 SET session_dir = ?,
+                    account_id = ?,
                     status = 'queued',
                     priority = ?,
                     attempts = 0,
@@ -1037,6 +1303,7 @@ def enqueue_depression_job(
                 """,
                 (
                     str(Path(session_dir).resolve()),
+                    account_id,
                     priority,
                     max_attempts,
                     queued_at,
@@ -1489,6 +1756,7 @@ def get_realtime_session(db_path: Path, session_hash: str) -> Optional[dict[str,
             """
             SELECT
                 session_hash,
+                account_id,
                 session_dir_name,
                 created_at,
                 updated_at,
@@ -1509,6 +1777,7 @@ def get_realtime_session(db_path: Path, session_hash: str) -> Optional[dict[str,
         return None
     return {
         "session_hash": row["session_hash"] or "",
+        "account_id": row["account_id"] or row["session_hash"] or "",
         "session_dir_name": row["session_dir_name"] or "",
         "created_at": row["created_at"] or "",
         "updated_at": row["updated_at"] or "",
@@ -1534,6 +1803,7 @@ def ensure_realtime_session(
         db_path,
         {
             "session_hash": session_hash,
+            "account_id": session_hash,
             "session_dir_name": session_dir_name,
             "created_at": now,
             "updated_at": now,
@@ -1590,6 +1860,7 @@ def upsert_feedback_records(db_path: Path, records: Iterable[dict[str, Any]]) ->
                 continue
 
             session_hash = str(raw_record.get("session_hash") or "").strip()
+            account_id = normalize_account_id(raw_record.get("account_id") or session_hash)
             feedback_text = str(raw_record.get("feedback_text") or "").strip()
             if not session_hash or not feedback_text:
                 continue
@@ -1605,6 +1876,7 @@ def upsert_feedback_records(db_path: Path, records: Iterable[dict[str, Any]]) ->
                     """
                     UPDATE feedback_records
                     SET item_id = ?,
+                        account_id = ?,
                         response_text = ?,
                         feedback_text = ?,
                         source = ?,
@@ -1615,6 +1887,7 @@ def upsert_feedback_records(db_path: Path, records: Iterable[dict[str, Any]]) ->
                     """,
                     (
                         item_id or None,
+                        account_id,
                         response_text or None,
                         feedback_text,
                         raw_record.get("source") or "web_realtime_feedback",
@@ -1629,6 +1902,7 @@ def upsert_feedback_records(db_path: Path, records: Iterable[dict[str, Any]]) ->
                     """
                     INSERT INTO feedback_records (
                         session_hash,
+                        account_id,
                         item_id,
                         response_text,
                         feedback_text,
@@ -1637,10 +1911,11 @@ def upsert_feedback_records(db_path: Path, records: Iterable[dict[str, Any]]) ->
                         updated_at,
                         remote_addr,
                         user_agent
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         session_hash,
+                        account_id,
                         item_id or None,
                         response_text or None,
                         feedback_text,

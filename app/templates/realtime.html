@@ -532,7 +532,6 @@
       overflow: visible;
       padding: 0;
       background: #fbfbfa;
-      isolation: isolate;
     }
 
     .ios-status-bar,
@@ -602,7 +601,7 @@
     .status-wave-bars span {
       width: 2px;
       height: 10px;
-      background-color: #007aff;
+      background-color: currentColor;
       border-radius: 1px;
       animation: status-wave-bar-anim 1s ease-in-out infinite;
       transform-origin: bottom;
@@ -677,12 +676,14 @@
       left: 0;
       right: 0;
       transform: none;
-      z-index: 50;
+      z-index: 240;
       width: auto;
       max-width: none;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-end;
+      gap: 10px;
       padding: 0 max(18px, env(safe-area-inset-right)) 0 max(18px, env(safe-area-inset-left));
       background: transparent;
       border: none;
@@ -692,11 +693,394 @@
       pointer-events: none;
     }
 
-    .right-buttons-group {
+    .call-controls-row {
       display: flex;
       align-items: center;
-      gap: 16px;
+      justify-content: space-between;
+      gap: 14px;
+      width: min(620px, calc(100vw - 36px));
+      pointer-events: none;
+    }
+
+    .call-actions-group {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 14px;
+      pointer-events: none;
+    }
+
+    .liquid-glass-shell {
+      position: relative;
+      display: inline-flex !important;
+      align-items: stretch;
+      justify-content: center;
+      border-radius: 999px;
       pointer-events: auto;
+      flex: 0 0 auto;
+      overflow: visible;
+    }
+
+    .liquid-control-glass {
+      display: inline-flex !important;
+      align-items: stretch;
+      justify-content: center;
+      border-radius: 999px;
+      pointer-events: auto;
+      flex: 0 0 auto;
+    }
+
+    .liquid-control-glass.relative {
+      position: absolute;
+    }
+
+    .liquid-glass-shell > .bg-black {
+      background-color: #000000;
+    }
+
+    .liquid-glass-shell > .pointer-events-none {
+      pointer-events: none;
+    }
+
+    .liquid-glass-shell > .mix-blend-overlay {
+      mix-blend-mode: overlay;
+    }
+
+    .liquid-glass-shell > .opacity-0 {
+      opacity: 0;
+    }
+
+    .liquid-glass-shell > .opacity-20 {
+      opacity: 0.16;
+    }
+
+    .liquid-glass-shell > .opacity-100 {
+      opacity: 0.34;
+    }
+
+    .liquid-glass-shell > .transition-all {
+      transition-property: all;
+    }
+
+    .liquid-glass-shell > .duration-150 {
+      transition-duration: 150ms;
+    }
+
+    .liquid-glass-shell > .ease-in-out {
+      transition-timing-function: ease-in-out;
+    }
+
+    .liquid-control-glass .text-white {
+      color: #ffffff;
+    }
+
+    .liquid-control-glass .glass {
+      background: rgba(255, 255, 255, 0.22);
+      border: 0;
+      outline: 0;
+    }
+
+    .liquid-control-glass .glass__warp {
+      background: rgba(255, 255, 255, 0.18);
+      border: 0;
+    }
+
+    .liquid-control-glass--input.cursor-pointer {
+      cursor: text;
+    }
+
+    .liquid-glass-shell.liquid-control-glass--input > .opacity-20 {
+      opacity: 0.14;
+    }
+
+    .liquid-glass-shell.liquid-control-glass--input > .opacity-100 {
+      opacity: 0.3;
+    }
+
+    .liquid-control-glass--input .glass {
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.2) !important;
+      border: 1px solid rgba(255, 255, 255, 0.34);
+      box-shadow:
+        0 18px 52px rgba(0, 0, 0, 0.18),
+        inset 0 1px 1px rgba(255, 255, 255, 0.72),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.24) !important;
+    }
+
+    .liquid-control-glass--input .glass__warp {
+      opacity: 1;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .liquid-control-glass--input .text-white {
+      width: 100%;
+      height: 100%;
+      color: var(--text);
+      text-shadow: none;
+    }
+
+    .liquid-control-glass--actions .glass,
+    .liquid-control-glass--dark .glass,
+    .liquid-control-glass--mic:has(.mic-btn.muted) .glass {
+      background: rgba(18, 18, 20, 0.34);
+    }
+
+    .liquid-control-glass--actions .glass__warp,
+    .liquid-control-glass--dark .glass__warp,
+    .liquid-control-glass--mic:has(.mic-btn.muted) .glass__warp {
+      background: rgba(18, 18, 20, 0.16);
+    }
+
+    .liquid-glass-shell:has(.call-btn.hidden) {
+      display: none !important;
+    }
+
+    #statusPillGlassRoot {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      pointer-events: auto;
+    }
+
+    #callStatusGlassRoot {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 240;
+      min-width: 112px;
+      min-height: 34px;
+      pointer-events: none;
+    }
+
+    #callStatusGlassRoot .liquid-glass-shell {
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.22s ease, visibility 0.22s ease;
+    }
+
+    #callStatusGlassRoot .liquid-glass-shell:has(.call-status-label[style*="visibility: visible"]) {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .liquid-control-glass--input {
+      align-self: center;
+      width: min(620px, calc(100vw - 36px));
+      height: 56px;
+      margin: 0 auto;
+    }
+
+    .liquid-control-glass--cluster {
+      height: 56px;
+      min-height: 56px;
+    }
+
+    .liquid-glass-shell.liquid-control-glass--statusPill,
+    .liquid-control-glass.liquid-control-glass--statusPill {
+      min-width: 104px;
+      min-height: 34px;
+    }
+
+    .liquid-glass-shell.liquid-control-glass--call-status,
+    .liquid-control-glass.liquid-control-glass--call-status {
+      min-width: 112px;
+      min-height: 34px;
+    }
+
+    .liquid-glass-shell.liquid-control-glass--compact,
+    .liquid-control-glass.liquid-control-glass--compact,
+    .liquid-glass-shell.liquid-control-glass--mic,
+    .liquid-control-glass.liquid-control-glass--mic {
+      width: 56px;
+      min-width: 56px;
+    }
+
+    .liquid-glass-shell.liquid-control-glass--actions,
+    .liquid-control-glass.liquid-control-glass--actions {
+      width: 132px;
+      min-width: 132px;
+    }
+
+    .liquid-glass-shell.liquid-control-glass--actions.liquid-control-glass--end-only,
+    .liquid-control-glass.liquid-control-glass--actions.liquid-control-glass--end-only {
+      width: 132px;
+      min-width: 132px;
+    }
+
+    .liquid-control-glass--compact .control-cluster {
+      width: 56px;
+      min-width: 56px;
+      padding: 4px;
+      justify-content: center;
+    }
+
+    .liquid-control-glass--mic .control-cluster {
+      width: 56px;
+      min-width: 56px;
+      padding: 4px;
+      justify-content: center;
+    }
+
+    .liquid-control-glass--actions .control-cluster {
+      width: 100%;
+      min-width: 56px;
+      justify-content: flex-end;
+    }
+
+    .liquid-control-glass--input .text-input-form,
+    .liquid-control-glass--input .text-input-form:focus-within {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      border-color: transparent !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+
+    .liquid-control-glass--statusPill .status-pill {
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      position: relative;
+      z-index: 2;
+    }
+
+    .liquid-control-glass--call-status .call-status-label {
+      position: relative;
+      top: auto;
+      left: auto;
+      transform: none;
+      z-index: 2;
+      display: inline-flex !important;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+
+    .liquid-control-glass--cluster .control-cluster {
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    .control-cluster {
+      pointer-events: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 56px;
+      min-width: 56px;
+      padding: 4px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      box-shadow: none;
+      box-sizing: border-box;
+    }
+
+    .control-cluster--compact {
+      width: 56px;
+      min-width: 56px;
+      justify-content: center;
+    }
+
+    .control-cluster--mic {
+      width: 56px;
+      min-width: 56px;
+      justify-content: center;
+    }
+
+    .control-cluster--actions {
+      min-width: 56px;
+      justify-content: flex-end;
+    }
+
+    .text-input-form {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      align-self: center;
+      flex: 0 1 auto;
+      width: min(620px, calc(100vw - 36px));
+      height: 56px;
+      margin: 0 auto;
+      padding: 6px 6px 6px 18px;
+      border: 1px solid rgba(255, 255, 255, 0.34);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.2);
+      box-shadow:
+        0 18px 52px rgba(0, 0, 0, 0.16),
+        inset 0 1px 1px rgba(255, 255, 255, 0.7),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.22);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      box-sizing: border-box;
+    }
+
+    .text-input-form:focus-within {
+      border-color: rgba(255, 255, 255, 0.48);
+      box-shadow:
+        0 20px 58px rgba(0, 0, 0, 0.2),
+        inset 0 1px 1px rgba(255, 255, 255, 0.8),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.28);
+    }
+
+    .text-input-form[aria-disabled] {
+      opacity: 1;
+    }
+
+    .text-input-form[aria-disabled] .text-input {
+      opacity: 0.56;
+    }
+
+    .text-input {
+      min-width: 0;
+      flex: 1;
+      height: 100%;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 16px;
+      line-height: 1;
+      outline: none;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    .text-input::placeholder {
+      color: var(--muted);
+    }
+
+    .text-send-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 999px;
+      background: rgba(17, 17, 17, 0.82);
+      color: #ffffff;
+      flex: 0 0 auto;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(10px) saturate(160%);
+      -webkit-backdrop-filter: blur(10px) saturate(160%);
+    }
+
+    .text-send-btn:hover:not(:disabled) {
+      background: rgba(0, 0, 0, 0.9);
+    }
+
+    .text-send-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
     }
 
     .call-btn {
@@ -707,15 +1091,15 @@
       border: none;
       padding: 0;
       min-height: auto;
-      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease, background-color 0.2s ease, opacity 0.15s ease;
+      transition: transform 0.18s ease, box-shadow 0.2s ease, background-color 0.2s ease, opacity 0.15s ease;
       box-sizing: border-box;
       pointer-events: auto;
     }
     .call-btn:hover:not(:disabled) {
-      transform: scale(1.06);
+      transform: translateY(-1px) scale(1.03);
     }
     .call-btn:active:not(:disabled) {
-      transform: scale(0.96);
+      transform: scale(0.97);
     }
     .call-btn:disabled {
       opacity: 0.4;
@@ -726,9 +1110,11 @@
       width: 48px;
       height: 48px;
       border-radius: 50%;
-      background: #ffffff;
+      background: rgba(255, 255, 255, 0.76);
       color: #0b0b0b;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+      backdrop-filter: blur(10px) saturate(160%);
+      -webkit-backdrop-filter: blur(10px) saturate(160%);
     }
     .call-btn.back-btn:hover:not(:disabled) {
       box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14), 0 4px 10px rgba(0, 0, 0, 0.06);
@@ -742,14 +1128,38 @@
       stroke: #0b0b0b;
     }
 
+    .call-btn.result-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(17, 17, 17, 0.82);
+      color: #ffffff;
+      box-shadow: none;
+      backdrop-filter: blur(10px) saturate(160%);
+      -webkit-backdrop-filter: blur(10px) saturate(160%);
+    }
+    .call-btn.result-btn:hover:not(:disabled) {
+      background: rgba(0, 0, 0, 0.9);
+    }
+    .call-btn.result-btn:active:not(:disabled) {
+      background: rgba(17, 17, 17, 0.82);
+    }
+    .call-btn.result-btn svg {
+      width: 22px;
+      height: 22px;
+      stroke: #ffffff;
+    }
+
     .call-btn.mic-btn {
       width: 48px;
       height: 48px;
       border-radius: 50%;
-      background: #ffffff;
+      background: rgba(255, 255, 255, 0.76);
       color: #0b0b0b;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
       position: relative;
+      backdrop-filter: blur(10px) saturate(160%);
+      -webkit-backdrop-filter: blur(10px) saturate(160%);
     }
     .call-btn.mic-btn:hover:not(:disabled) {
       box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14), 0 4px 10px rgba(0, 0, 0, 0.06);
@@ -763,7 +1173,7 @@
       stroke: #0b0b0b;
     }
     .call-btn.mic-btn.muted {
-      background: #252424;
+      background: rgba(37, 36, 36, 0.84);
       color: #ffffff;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.08);
     }
@@ -773,6 +1183,7 @@
     .call-btn.mic-btn.muted svg {
       stroke: #ffffff;
     }
+
     .mic-slash {
       display: none;
     }
@@ -800,34 +1211,32 @@
     }
 
     .call-btn.end-btn {
-      background: #1c1c1e;
+      background: rgba(28, 28, 30, 0.84);
       box-shadow: 0 8px 26px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.1);
+      backdrop-filter: blur(10px) saturate(160%);
+      -webkit-backdrop-filter: blur(10px) saturate(160%);
     }
 
     .call-btn.end-btn:hover:not(:disabled) {
-      background: #1c1c1e;
+      background: rgba(28, 28, 30, 0.94);
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), 0 4px 12px rgba(0, 0, 0, 0.14);
     }
 
     .call-btn.restart-btn {
-      background: #0071e3;
-      box-shadow: 0 10px 22px rgba(0, 113, 227, 0.18);
+      background: rgba(17, 17, 17, 0.84);
+      box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+      backdrop-filter: blur(10px) saturate(160%);
+      -webkit-backdrop-filter: blur(10px) saturate(160%);
     }
 
     .call-btn.restart-btn:hover:not(:disabled) {
-      background: #0066cc;
-      box-shadow: 0 12px 28px rgba(0, 113, 227, 0.24);
+      background: rgba(0, 0, 0, 0.94);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
     }
 
     .call-btn.restart-btn:active:not(:disabled) {
-      box-shadow: 0 5px 14px rgba(0, 113, 227, 0.18);
+      box-shadow: 0 5px 14px rgba(0, 0, 0, 0.18);
     }
-
-    .call-btn.restart-btn span:not(.pill-dots) {
-      font-size: 13px;
-      letter-spacing: 0.01em;
-    }
-
     .call-btn.end-btn .pill-dots,
     .call-btn.restart-btn .pill-dots {
       display: inline-flex;
@@ -855,6 +1264,143 @@
       background: rgba(255, 255, 255, 0.85);
       transition: height 0.05s ease, background-color 0.2s ease;
       flex-shrink: 0;
+    }
+
+    .liquid-control-glass .call-btn {
+      background: transparent !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      position: relative;
+      z-index: 2;
+    }
+
+    .liquid-control-glass--button .call-btn {
+      width: auto !important;
+      min-width: 0 !important;
+      height: auto !important;
+      min-height: 0 !important;
+      padding: 0 !important;
+      border-radius: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .liquid-control-glass .call-btn[role="button"] {
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .liquid-control-glass--button .call-btn.end-btn,
+    .liquid-control-glass--button .call-btn.restart-btn {
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .liquid-control-glass .call-btn:hover:not(:disabled):not([aria-disabled="true"]),
+    .liquid-control-glass .call-btn:active:not(:disabled):not([aria-disabled="true"]) {
+      background: transparent !important;
+      box-shadow: none !important;
+      transform: none;
+    }
+
+    .liquid-control-glass .call-btn:disabled,
+    .liquid-control-glass .call-btn[aria-disabled="true"],
+    .liquid-control-glass .call-btn[data-disabled] {
+      cursor: not-allowed;
+      opacity: 1 !important;
+    }
+
+    .liquid-control-glass .call-btn[aria-disabled="true"]:hover,
+    .liquid-control-glass .call-btn[aria-disabled="true"]:active,
+    .liquid-control-glass .call-btn[data-disabled]:hover,
+    .liquid-control-glass .call-btn[data-disabled]:active {
+      transform: none;
+    }
+
+    .liquid-control-glass .call-btn:disabled > *,
+    .liquid-control-glass .call-btn[aria-disabled="true"] > *,
+    .liquid-control-glass .call-btn[data-disabled] > * {
+      opacity: 0.48;
+    }
+
+    .liquid-control-glass--compact .call-btn.back-btn,
+    .liquid-control-glass--mic .call-btn.mic-btn:not(.muted) {
+      color: #0b0b0b !important;
+    }
+
+    .liquid-control-glass--compact .call-btn.back-btn svg,
+    .liquid-control-glass--mic .call-btn.mic-btn:not(.muted) svg {
+      stroke: currentColor !important;
+    }
+
+    .liquid-control-glass--mic:has(.mic-btn.muted) .call-btn.mic-btn,
+    .liquid-control-glass--actions .call-btn {
+      color: #ffffff !important;
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.28);
+    }
+
+    .liquid-control-glass--mic:has(.mic-btn.muted) .call-btn.mic-btn svg,
+    .liquid-control-glass--actions .call-btn svg {
+      stroke: currentColor !important;
+    }
+
+    .liquid-control-glass--input .text-send-btn {
+      color: #0b0b0b !important;
+    }
+
+    .liquid-control-glass--input .text-send-btn:hover:not(:disabled),
+    .liquid-control-glass--input .text-send-btn:active:not(:disabled) {
+      background: transparent !important;
+      box-shadow: none !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .call-btn,
+      .text-input-form,
+      .control-cluster {
+        transition: none;
+      }
+
+      .call-btn:hover:not(:disabled),
+      .call-btn:active:not(:disabled) {
+        transform: none;
+      }
+    }
+
+    @media (prefers-reduced-transparency: reduce) {
+      #realtimeControlsRoot:not([data-react-mounted="true"]) .text-input-form {
+        border-color: rgba(0, 0, 0, 0.12);
+        background: #ffffff;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1);
+      }
+
+      #realtimeControlsRoot:not([data-react-mounted="true"]) .control-cluster {
+        border-color: transparent;
+        background: transparent;
+        box-shadow: none;
+      }
+    }
+
+    @media (prefers-contrast: more) {
+      .text-input-form,
+      .control-cluster {
+        border-color: rgba(0, 0, 0, 0.32);
+      }
+
+      .call-btn.back-btn,
+      .call-btn.result-btn,
+      .call-btn.mic-btn {
+        outline: 1px solid rgba(0, 0, 0, 0.34);
+      }
+
+      .text-send-btn,
+      .call-btn.end-btn,
+      .call-btn.restart-btn {
+        outline: 1px solid rgba(0, 0, 0, 0.28);
+        outline-offset: -2px;
+      }
     }
 
     .video-pip {
@@ -969,193 +1515,11 @@
       border-bottom-left-radius: 6px;
       box-shadow: var(--shadow-sm);
     }
-    .sidebar-log .line small {
-      display: block;
-      font-size: 10px;
-      font-weight: 600;
-      margin-bottom: 4px;
-      opacity: 0.7;
-      letter-spacing: 0;
-      text-transform: uppercase;
-    }
-    .sidebar-log .line.user small {
-      color: var(--muted);
-      text-align: right;
-    }
-    .sidebar-log .line.assistant small {
-      color: var(--muted);
-    }
-
     .sidebar-log .line.draft {
       opacity: 0.86;
     }
 
     .line-text {
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-
-    .sidebar-log .trace-card {
-      max-width: 100%;
-      align-self: stretch;
-      border: 1px solid var(--line);
-      border-radius: var(--radius-sm);
-      background: rgba(255, 255, 255, 0.72);
-      color: var(--text);
-      overflow: hidden;
-    }
-    .trace-header {
-      appearance: none;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto;
-      align-items: center;
-      gap: 12px;
-      width: 100%;
-      min-height: 42px;
-      padding: 10px 14px;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      color: inherit;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
-      text-align: left;
-      transition: background var(--transition);
-    }
-    .trace-header:hover:not(:disabled) {
-      background: rgba(0, 0, 0, 0.035);
-    }
-    .trace-header::after {
-      content: "";
-      width: 0;
-      height: 0;
-      border-top: 5px solid transparent;
-      border-bottom: 5px solid transparent;
-      border-left: 6px solid var(--muted);
-      transition: transform 0.18s ease;
-    }
-    .trace-header[aria-expanded="true"]::after {
-      transform: rotate(90deg);
-    }
-    .trace-title {
-      flex: 1;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .trace-status {
-      flex-shrink: 0;
-      max-width: 45%;
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 500;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .trace-status.strategy-tag {
-      max-width: none;
-      padding: 4px 10px;
-      border-radius: 999px;
-      background: var(--accent-light);
-      color: var(--accent);
-      font-size: 11px;
-      font-weight: 700;
-      line-height: 1;
-    }
-    .trace-detail-backdrop {
-      position: fixed;
-      inset: 0;
-      z-index: 260;
-      background: rgba(251, 251, 250, 0.96);
-      display: flex;
-      justify-content: center;
-      touch-action: pan-y;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-    }
-    .trace-detail-backdrop[hidden] {
-      display: none !important;
-    }
-    .trace-detail-panel {
-      width: min(900px, 100%);
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      background: var(--panel);
-      border-left: 1px solid var(--line);
-      border-right: 1px solid var(--line);
-      box-shadow: var(--shadow-lg);
-    }
-    .trace-detail-header {
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 18px 24px;
-      border-bottom: 1px solid var(--line);
-    }
-    .trace-detail-title {
-      margin: 0;
-      color: var(--text);
-      font-size: 18px;
-      font-weight: 700;
-      letter-spacing: 0;
-    }
-    .trace-detail-status {
-      display: block;
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 500;
-    }
-    .trace-detail-close {
-      min-width: 40px;
-      width: 40px;
-      height: 40px;
-      min-height: 40px;
-      padding: 0;
-      border-radius: 50%;
-      background: rgba(0, 0, 0, 0.06);
-      color: var(--text);
-      font-size: 18px;
-      line-height: 1;
-      transition: all var(--transition);
-    }
-    .trace-detail-close:hover:not(:disabled) {
-      background: rgba(0, 0, 0, 0.12);
-    }
-    .trace-detail-body {
-      flex: 1;
-      min-height: 0;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      overscroll-behavior: contain;
-      touch-action: pan-y;
-      padding: 20px 24px 36px;
-    }
-    .trace-detail-section + .trace-detail-section {
-      margin-top: 22px;
-      padding-top: 18px;
-      border-top: 1px solid var(--line);
-    }
-    .trace-detail-section-title {
-      margin: 0 0 8px;
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0;
-      text-transform: uppercase;
-    }
-    .trace-detail-body pre {
-      margin: 0;
-      color: var(--text-secondary);
-      font-family: 'SF Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 12px;
-      line-height: 1.6;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
@@ -1610,9 +1974,10 @@
       height: 48px;
       padding: 0;
       border-radius: 999px;
-      background: #eeedff;
-      color: #4543ac;
-      box-shadow: 0 8px 24px rgba(88, 86, 214, 0.15);
+      background: #111111;
+      color: #ffffff;
+      border-color: transparent;
+      box-shadow: none;
       font-weight: 750;
     }
     .call-btn.result-btn svg {
@@ -1689,6 +2054,25 @@
         gap: 12px;
         bottom: max(14px, env(safe-area-inset-bottom));
         padding: 0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
+      }
+
+      .call-controls-row {
+        gap: 14px;
+        width: calc(100vw - 24px);
+      }
+
+      .call-actions-group {
+        gap: 14px;
+      }
+
+      .text-input-form {
+        width: calc(100vw - 24px);
+        min-width: 0;
+        margin: 0 auto;
+      }
+
+      .liquid-control-glass--input {
+        width: calc(100vw - 24px);
       }
 
       .call-btn {
@@ -1791,7 +2175,9 @@
         <h1>Realtime Speech</h1>
         <span class="subtle" id="selectedUserLabel">請先選擇使用者</span>
       </div>
-      <span class="status-pill" id="statusPill">未連線</span>
+      <div id="statusPillGlassRoot" data-initial-text="未連線">
+        <span class="status-pill" id="statusPill">未連線</span>
+      </div>
     </header>
 
     <section id="selectionView" class="selection-container">
@@ -1856,33 +2242,54 @@
         </div>
         <audio id="remoteAudio" autoplay></audio>
 
-        <div class="call-status-label" id="callStatusLabel"></div>
+        <div id="callStatusGlassRoot">
+          <div class="call-status-label" id="callStatusLabel"></div>
+        </div>
         <div class="call-user-label" id="callUserLabel"></div>
         <div class="assistant-audio-glow" id="assistantAudioGlow" aria-hidden="true"></div>
 
         <!-- Bottom bar -->
-        <div class="call-bottom-bar">
-          <button class="call-btn back-btn" id="chooseAgainButton" type="button" disabled title="返回">
-            <svg fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-            </svg>
-          </button>
-          <div class="right-buttons-group">
-            <button class="call-btn result-btn hidden" id="depressionResultButton" type="button" title="查看憂鬱評估結果" aria-label="查看憂鬱評估結果">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M4 19V9M10 19V5M16 19v-7M22 19H2" />
-              </svg>
-            </button>
-            <button class="call-btn mic-btn" id="muteMicButton" type="button" disabled title="靜音" aria-label="靜音" aria-pressed="false">
-              <svg class="voice-orb-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
-                <path class="mic-slash" stroke-linecap="round" stroke-linejoin="round" d="M4.8 4.8 19.2 19.2" />
-              </svg>
-            </button>
-            <button class="call-btn end-btn" id="endSessionButton" type="button" title="結束對話">
-              <span class="pill-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              <span>結束</span>
-            </button>
+        <div id="realtimeControlsRoot" data-variant="main">
+          <div class="call-bottom-bar">
+            <form class="text-input-form" id="textInputForm" autocomplete="off">
+              <input class="text-input" id="textInput" type="text" placeholder="輸入文字" autocomplete="off" disabled aria-label="輸入文字訊息">
+              <button class="call-btn text-send-btn" id="sendTextButton" type="submit" disabled title="送出文字" aria-label="送出文字">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M5 12h14"></path>
+                  <path d="M13 6l6 6-6 6"></path>
+                </svg>
+              </button>
+            </form>
+            <div class="call-controls-row">
+              <div class="control-cluster control-cluster--compact" role="toolbar" aria-label="返回">
+                <button class="call-btn back-btn" id="chooseAgainButton" type="button" disabled title="返回" aria-label="返回">
+                  <svg fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                  </svg>
+                </button>
+              </div>
+              <div class="call-actions-group">
+                <div class="control-cluster control-cluster--mic" role="toolbar" aria-label="麥克風控制">
+                  <button class="call-btn mic-btn" id="muteMicButton" type="button" disabled title="靜音" aria-label="靜音" aria-pressed="false">
+                    <svg class="voice-orb-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
+                      <path class="mic-slash" stroke-linecap="round" stroke-linejoin="round" d="M4.8 4.8 19.2 19.2" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="control-cluster control-cluster--actions" role="toolbar" aria-label="對話控制">
+                  <button class="call-btn result-btn hidden" id="depressionResultButton" type="button" title="查看憂鬱評估結果" aria-label="查看憂鬱評估結果">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M4 19V9M10 19V5M16 19v-7M22 19H2" />
+                    </svg>
+                  </button>
+                  <button class="call-btn end-btn" id="endSessionButton" type="button" title="結束對話">
+                    <span class="pill-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span>結束</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <aside class="transcript-sidebar" id="transcriptSidebar">
@@ -1892,28 +2299,6 @@
           <div class="sidebar-log" id="transcriptLog"></div>
         </aside>
 
-
-        <div class="trace-detail-backdrop" id="traceDetailBackdrop" hidden>
-          <section class="trace-detail-panel" role="dialog" aria-modal="true" aria-labelledby="traceDetailTitle">
-            <header class="trace-detail-header">
-              <div>
-                <h3 class="trace-detail-title" id="traceDetailTitle">Prompt / Response</h3>
-                <span class="trace-detail-status" id="traceDetailStatus"></span>
-              </div>
-              <button class="trace-detail-close" id="traceDetailCloseButton" type="button" aria-label="關閉">×</button>
-            </header>
-            <div class="trace-detail-body">
-              <section class="trace-detail-section">
-                <h4 class="trace-detail-section-title">Prompt</h4>
-                <pre id="traceDetailPrompt"></pre>
-              </section>
-              <section class="trace-detail-section">
-                <h4 class="trace-detail-section-title">Response</h4>
-                <pre id="traceDetailResponse"></pre>
-              </section>
-            </div>
-          </section>
-        </div>
 
             <div class="assessment-backdrop" id="depressionResultBackdrop" hidden>
               <section class="assessment-panel" role="dialog" aria-modal="true" aria-labelledby="depressionResultTitle">
@@ -1939,12 +2324,22 @@
     </section>
   </main>
 
+  <script src="{{ url_for('static', filename='dist/realtime-controls.iife.js') }}"></script>
+  <script>
+    window.CompanionRealtimeControls?.mountStatusPill(
+      document.getElementById("statusPillGlassRoot")
+    );
+    window.CompanionRealtimeControls?.mountCallStatus(
+      document.getElementById("callStatusGlassRoot")
+    );
+    window.CompanionRealtimeControls?.mount(
+      document.getElementById("realtimeControlsRoot"),
+      { variant: "main" }
+    );
+  </script>
   <script>
     const SCRIPT_ROOT = {{ request.script_root|tojson }};
-    const REALTIME_MODE_LISTENING = "listening";
-    const REALTIME_MODE_GUIDANCE = "guidance";
-    const EMOTION_CONTEXT_TURN_COUNT = 3;
-    const INITIAL_UNCLASSIFIED_TURN_COUNT = 3;
+    const RECENT_CONTEXT_MESSAGE_LIMIT = 6;
     const STATUS_LISTENING_SETTLE_MS = 400;
     const ASSISTANT_AUDIO_RELEASE_DELAY_MS = 700;
     const ASSISTANT_AUDIO_LEVEL_THRESHOLD = 0.008;
@@ -1981,10 +2376,11 @@
       endSessionButton: document.getElementById("endSessionButton"),
       chooseAgainButton: document.getElementById("chooseAgainButton"),
       muteMicButton: document.getElementById("muteMicButton"),
+      textInputForm: document.getElementById("textInputForm"),
+      textInput: document.getElementById("textInput"),
+      sendTextButton: document.getElementById("sendTextButton"),
       sessionNotice: document.getElementById("sessionNotice"),
       sessionHashText: document.getElementById("sessionHashText"),
-      modeText: document.getElementById("modeText"),
-      negativeText: document.getElementById("negativeText"),
       frameCountText: document.getElementById("frameCountText"),
       transcriptLog: document.getElementById("transcriptLog"),
       visualizerCanvas: document.getElementById("visualizerCanvas"),
@@ -1995,12 +2391,6 @@
       transcriptSidebar: document.getElementById("transcriptSidebar"),
       sidebarToggleButton: document.getElementById("sidebarToggleButton"),
       closeSidebarButton: document.getElementById("closeSidebarButton"),
-      traceDetailBackdrop: document.getElementById("traceDetailBackdrop"),
-      traceDetailTitle: document.getElementById("traceDetailTitle"),
-      traceDetailStatus: document.getElementById("traceDetailStatus"),
-      traceDetailPrompt: document.getElementById("traceDetailPrompt"),
-      traceDetailResponse: document.getElementById("traceDetailResponse"),
-      traceDetailCloseButton: document.getElementById("traceDetailCloseButton"),
       depressionResultButton: document.getElementById("depressionResultButton"),
       depressionResultBackdrop: document.getElementById("depressionResultBackdrop"),
       depressionResultTitle: document.getElementById("depressionResultTitle"),
@@ -2039,16 +2429,11 @@
       restartReady: false,
       sessionGeneration: 0,
       currentResponseId: "",
-      currentConversationMode: "",
-      userTurnCount: 0,
-      consecutiveNegativeEmotionTurns: 0,
       transcriptEvents: [],
       transcriptLines: [],
       transcriptDedupe: new Set(),
-      emotionHistory: [],
-      pendingAssistantTrace: null,
-      pendingEmotionDetail: null,
-      activeTraceDetail: null,
+      recentMessages: [],
+      moodAspectState: { covered_aspects: [] },
       currentUserItemId: "",
       currentAssistantItemId: "",
       userTranscriptBuffer: "",
@@ -2074,6 +2459,37 @@
       onEnd: () => stopAndUpload("user_stop"),
       onRestart: () => restartCurrentUser(),
     });
+
+    function installControlDisabledShim(element) {
+      if (!element || element instanceof HTMLButtonElement || element instanceof HTMLInputElement) return;
+      if (element.__controlDisabledShim) return;
+      Object.defineProperty(element, "disabled", {
+        configurable: true,
+        get() {
+          return element.getAttribute("aria-disabled") === "true";
+        },
+        set(value) {
+          const disabled = Boolean(value);
+          element.toggleAttribute("data-disabled", disabled);
+          element.setAttribute("aria-disabled", String(disabled));
+          element.tabIndex = disabled ? -1 : 0;
+        },
+      });
+      element.__controlDisabledShim = true;
+      element.disabled = element.getAttribute("aria-disabled") === "true" || element.hasAttribute("data-disabled");
+      element.addEventListener("keydown", (event) => {
+        if (element.disabled || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        element.click();
+      });
+    }
+
+    [
+      els.endSessionButton,
+      els.chooseAgainButton,
+      els.muteMicButton,
+      els.depressionResultButton,
+    ].forEach(installControlDisabledShim);
 
     function updateViewportHeightVar() {
       const viewport = window.visualViewport;
@@ -2166,9 +2582,19 @@
     }
 
     els.refreshUsersButton.addEventListener("click", loadUsers);
-    els.endSessionButton.addEventListener("click", () => endButtonController.handleClick());
-    els.chooseAgainButton.addEventListener("click", resetToSelection);
-    els.muteMicButton.addEventListener("click", toggleMicrophoneMute);
+    els.endSessionButton.addEventListener("click", () => {
+      if (els.endSessionButton.disabled) return;
+      endButtonController.handleClick();
+    });
+    els.chooseAgainButton.addEventListener("click", () => {
+      if (els.chooseAgainButton.disabled) return;
+      resetToSelection();
+    });
+    els.muteMicButton.addEventListener("click", () => {
+      if (els.muteMicButton.disabled) return;
+      toggleMicrophoneMute();
+    });
+    els.textInputForm.addEventListener("submit", handleTextInputSubmit);
     if (els.sidebarToggleButton) {
       els.sidebarToggleButton.addEventListener("click", () => {
         els.transcriptSidebar.classList.toggle("open");
@@ -2179,11 +2605,10 @@
         els.transcriptSidebar.classList.remove("open");
       });
     }
-    els.traceDetailCloseButton.addEventListener("click", closeTraceDetail);
-    els.traceDetailBackdrop.addEventListener("click", (event) => {
-      if (event.target === els.traceDetailBackdrop) closeTraceDetail();
+    els.depressionResultButton.addEventListener("click", () => {
+      if (els.depressionResultButton.disabled) return;
+      handleDepressionResultButton();
     });
-    els.depressionResultButton.addEventListener("click", handleDepressionResultButton);
     els.depressionResultCloseButton.addEventListener("click", closeDepressionResult);
     els.depressionResultBackdrop.addEventListener("click", (event) => {
       if (event.target === els.depressionResultBackdrop) closeDepressionResult();
@@ -2257,7 +2682,7 @@
     }
 
     function userSessionHash(user) {
-      return String(user?.session_hash || user?.account_hash || user?.user_key || user?.form_hash || "").trim();
+      return String(user?.account_id || user?.session_hash || user?.account_hash || user?.user_key || user?.form_hash || "").trim();
     }
 
     async function startConversation(user) {
@@ -2270,6 +2695,7 @@
       const sessionGeneration = ++state.sessionGeneration;
       state.selectedUser = {
         ...user,
+        account_id: sessionHash,
         user_key: user.user_key || sessionHash,
         account_hash: user.account_hash || sessionHash,
         session_hash: sessionHash,
@@ -2277,18 +2703,13 @@
       state.sessionHash = sessionHash;
       state.startedAtMs = Date.now();
       state.responseRequestGeneration++;
-      state.currentConversationMode = "";
-      state.userTurnCount = 0;
-      state.consecutiveNegativeEmotionTurns = 0;
       state.medicalQaEnabled = false;
       state.currentResponseId = "";
       state.transcriptEvents = [];
       state.transcriptLines = [];
       state.transcriptDedupe = new Set();
-      state.emotionHistory = [];
-      state.pendingAssistantTrace = null;
-      state.pendingEmotionDetail = null;
-      state.activeTraceDetail = null;
+      state.recentMessages = [];
+      state.moodAspectState = { covered_aspects: [] };
       state.currentUserItemId = "";
       state.currentAssistantItemId = "";
       state.userTranscriptBuffer = "";
@@ -2318,18 +2739,17 @@
       document.body.classList.add("call-active");
       document.documentElement.classList.add("call-active");
       updateViewportHeightVar();
-      els.selectedUserLabel.textContent = `${user.name || "未命名使用者"} · session_hash ${state.sessionHash}`;
+      els.selectedUserLabel.textContent = `${user.name || "未命名使用者"} · account_id ${state.sessionHash}`;
       els.callUserLabel.textContent = user.name || "未命名使用者";
       if (els.sessionHashText) els.sessionHashText.textContent = state.sessionHash;
       els.transcriptLog.innerHTML = "";
-      closeTraceDetail();
+      els.textInput.value = "";
       if (els.transcriptSidebar) els.transcriptSidebar.classList.remove("open");
       setMicrophoneButtonEnabled(false);
       setMicrophoneMuted(false);
       els.chooseAgainButton.disabled = true;
       setStatus("啟動中");
       setNotice("正在開啟麥克風、攝影機與 Realtime 連線...");
-      updateModeUi();
 
       try {
         await startMediaCapture();
@@ -2398,8 +2818,8 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          account_id: state.sessionHash,
           session_hash: state.sessionHash,
-          conversation_mode: state.currentConversationMode,
         }),
       });
       const ephemeralKey = secretData.value || secretData.client_secret?.value || "";
@@ -2490,7 +2910,11 @@
         case "session.created":
         case "session.updated":
           markSessionReady();
-          if (!["listening", "thinking", "assistant-speaking"].includes(state.statusVisualKey)) {
+          if (
+            !["listening", "thinking", "assistant-speaking", "uploading", "uploaded"].includes(state.statusVisualKey)
+            && !state.statusVisualKey.startsWith("tool")
+            && !state.statusVisualKey.startsWith("stage-")
+          ) {
             setStatus("已連線");
           }
           break;
@@ -2590,12 +3014,66 @@
       if (!text) return;
       const transcriptItem = recordTranscript("user", itemId, text);
       if (!transcriptItem) return;
-      appendEmotionHistory("user", text);
-      state.userTurnCount += 1;
+      appendRecentMessage("user", text);
       state.currentMemoryContext = "";
       state.currentMemoryResolved = false;
       state.currentMemoryStatus = "";
-      requestEmotionThenAssistantResponse();
+      requestAssistantAfterUserTranscript();
+    }
+
+    function createTextItemId() {
+      return `text-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    async function handleTextInputSubmit(event) {
+      event.preventDefault();
+      const rawText = (els.textInput.value || "").trim();
+      if (
+        !rawText
+        || !state.sessionReady
+        || state.stopping
+        || state.restartReady
+        || !state.dc
+        || state.dc.readyState !== "open"
+      ) {
+        return;
+      }
+
+      els.textInput.value = "";
+      setTextInputEnabled(false);
+      try {
+        const text = await convertTranscriptToTraditional(rawText);
+        if (!text) return;
+        const itemId = createTextItemId();
+        if (state.currentResponseId) {
+          sendRealtimeEvent({ type: "response.cancel", response_id: state.currentResponseId });
+        }
+        sendRealtimeEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text,
+              },
+            ],
+          },
+        });
+        const transcriptItem = recordTranscript("user", itemId, text, { attachAudioInterval: false });
+        if (!transcriptItem) return;
+        appendRecentMessage("user", text);
+        state.currentMemoryContext = "";
+        state.currentMemoryResolved = false;
+        state.currentMemoryStatus = "";
+        requestAssistantAfterUserTranscript();
+      } finally {
+        setTextInputEnabled(state.sessionPhase === SESSION_PHASE.LIVE && state.dc?.readyState === "open");
+        if (state.sessionPhase === SESSION_PHASE.LIVE && !state.stopping) {
+          els.textInput.focus();
+        }
+      }
     }
 
     function secondsSinceSessionStart(timestampMs) {
@@ -2638,21 +3116,10 @@
       if (!text) return;
       const transcriptItem = recordTranscript("assistant", itemId, text);
       if (!transcriptItem) return;
-      appendEmotionHistory("assistant", text);
-      if (state.pendingAssistantTrace) {
-        const response = state.pendingAssistantTrace.responsePrefix
-          ? joinTraceBlocks(state.pendingAssistantTrace.responsePrefix, traceBlock("模型回覆", text))
-          : text;
-        updateTraceCard(state.pendingAssistantTrace, {
-          status: "完成",
-          prompt: state.pendingAssistantTrace.prompt || "",
-          response,
-        });
-        state.pendingAssistantTrace = null;
-      }
+      appendRecentMessage("assistant", text);
     }
 
-    function recordTranscript(speaker, itemId, text) {
+    function recordTranscript(speaker, itemId, text, options = {}) {
       const normalizedText = (text || "").trim();
       if (!normalizedText) return;
       const key = itemId
@@ -2667,7 +3134,7 @@
         text: normalizedText,
         timestamp_ms: Date.now(),
       };
-      if (speaker === "user") {
+      if (speaker === "user" && options.attachAudioInterval !== false) {
         const interval = state.pendingUserSpeechIntervals.shift()
           || finalizeCurrentUserSpeechInterval();
         if (interval) {
@@ -2686,142 +3153,26 @@
     function addTranscriptLine(speaker, text) {
       const row = document.createElement("div");
       row.className = `line ${speaker}`;
-      const speakerLabel = document.createElement("small");
-      speakerLabel.textContent = speaker === "user" ? "user" : "Assistant";
       const textEl = document.createElement("div");
       textEl.className = "line-text";
       textEl.textContent = text;
-      row.appendChild(speakerLabel);
       row.appendChild(textEl);
       els.transcriptLog.appendChild(row);
       scrollConversationToLatest();
     }
 
-    function addTraceCard(title, status, content = {}, options = {}) {
-      const card = document.createElement("article");
-      card.className = "trace-card";
-
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "trace-header";
-      toggle.setAttribute("aria-expanded", "false");
-      const titleEl = document.createElement("span");
-      titleEl.className = "trace-title";
-      titleEl.textContent = title;
-      const statusEl = document.createElement("span");
-      statusEl.className = "trace-status";
-      if (options.statusClass) statusEl.classList.add(options.statusClass);
-      statusEl.textContent = status;
-      toggle.appendChild(titleEl);
-      toggle.appendChild(statusEl);
-
-      card.appendChild(toggle);
-      els.transcriptLog.appendChild(card);
-
-      const trace = {
-        card,
-        toggle,
-        titleEl,
-        statusEl,
-        prompt: "",
-        response: "",
-      };
-      toggle.addEventListener("click", () => openTraceDetail(trace));
-      updateTraceCard(trace, { status, ...normalizeTraceContent(content) });
-      return trace;
-    }
-
-    function updateTraceCard(trace, { title, status, prompt, response, details } = {}) {
-      if (!trace) return;
-      if (title) trace.titleEl.textContent = title;
-      if (status) trace.statusEl.textContent = status;
-      if (details !== undefined) {
-        const normalized = normalizeTraceContent(details);
-        prompt = normalized.prompt;
-        response = normalized.response;
-      }
-      if (prompt !== undefined) {
-        trace.prompt = formatTraceDetails(prompt);
-      }
-      if (response !== undefined) {
-        trace.response = formatTraceDetails(response);
-      }
-      if (state.activeTraceDetail === trace) {
-        renderTraceDetail(trace);
-      }
-      scrollConversationToLatest();
-    }
-
-    function openTraceDetail(trace) {
-      if (state.activeTraceDetail && state.activeTraceDetail !== trace) {
-        state.activeTraceDetail.toggle.setAttribute("aria-expanded", "false");
-      }
-      state.activeTraceDetail = trace;
-      trace.toggle.setAttribute("aria-expanded", "true");
-      renderTraceDetail(trace);
-      els.traceDetailBackdrop.hidden = false;
-    }
-
-    function closeTraceDetail() {
-      if (state.activeTraceDetail) {
-        state.activeTraceDetail.toggle.setAttribute("aria-expanded", "false");
-      }
-      state.activeTraceDetail = null;
-      els.traceDetailBackdrop.hidden = true;
-    }
-
-    function renderTraceDetail(trace) {
-      els.traceDetailTitle.textContent = trace.titleEl.textContent || "Prompt / Response";
-      els.traceDetailStatus.textContent = trace.statusEl.textContent || "";
-      els.traceDetailPrompt.textContent = trace.prompt || "";
-      els.traceDetailResponse.textContent = trace.response || "";
-    }
-
-    function formatTraceDetails(details) {
-      if (typeof details === "string") return details;
-      return JSON.stringify(details || {}, null, 2);
-    }
-
-    function traceContent(prompt, response) {
-      return { prompt, response };
-    }
-
-    function traceBlock(title, content) {
-      return `【${title}】\n${formatTraceDetails(content)}`;
-    }
-
-    function joinTraceBlocks(...blocks) {
-      return blocks.filter((block) => block && String(block).trim()).join("\n\n");
-    }
-
-    function normalizeTraceContent(content) {
-      if (content && typeof content === "object" && ("prompt" in content || "response" in content)) {
-        return {
-          prompt: content.prompt ?? "",
-          response: content.response ?? "",
-        };
-      }
-      return {
-        prompt: "",
-        response: content ?? "",
-      };
-    }
-
-    function emotionLabel(emotion) {
-      if (emotion === "negative") return "負向";
-      if (emotion === "positive") return "正向";
-      return "中性";
-    }
-
-    function conversationModeLabel(mode) {
-      if (!mode) return "";
-      return mode === REALTIME_MODE_GUIDANCE ? "建議模式" : "傾聽模式";
-    }
-
-    function toolLabel(name) {
+    function toolStatusLabel(name) {
+      if (name === "mood_assessment") return "情緒問答";
       if (name === "medical_qa") return "醫療問答";
-      if (name === "search_web") return "Web search";
+      if (name === "search_web") return "網路搜尋";
       return name || "工具";
+    }
+
+    function toolStatusVariant(name) {
+      if (name === "mood_assessment") return "tool-phq";
+      if (name === "medical_qa") return "tool-medical";
+      if (name === "search_web") return "tool-web";
+      return "tool";
     }
 
     async function convertTranscriptToTraditional(text) {
@@ -2841,88 +3192,19 @@
     }
 
 
-    function appendEmotionHistory(role, text) {
-      state.emotionHistory.push({ role, text });
-      const maxMessages = EMOTION_CONTEXT_TURN_COUNT * 2;
-      while (state.emotionHistory.length > maxMessages) {
-        state.emotionHistory.shift();
+    function appendRecentMessage(role, text) {
+      state.recentMessages.push({ role, text });
+      while (state.recentMessages.length > RECENT_CONTEXT_MESSAGE_LIMIT) {
+        state.recentMessages.shift();
       }
     }
 
-    async function requestEmotionThenAssistantResponse() {
+    async function requestAssistantAfterUserTranscript() {
       const requestId = ++state.responseRequestGeneration;
-      state.pendingEmotionDetail = null;
+      setStatus("正在思考");
       const memoryPromise = requestCurrentMemory(requestId);
-      if (state.userTurnCount <= INITIAL_UNCLASSIFIED_TURN_COUNT) {
-        state.currentConversationMode = "";
-        state.consecutiveNegativeEmotionTurns = 0;
-        updateModeUi();
-        await memoryPromise;
-        if (requestId !== state.responseRequestGeneration || state.stopping) return;
-        await requestAssistantResponse("default", "auto");
-        return;
-      }
-      setStatus("情緒判斷與記憶搜尋中");
-      const emotionPromise = fetchJson(apiPath("/api/realtime-emotion"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_hash: state.sessionHash,
-          messages: state.emotionHistory,
-          phq8: state.selectedUser?.phq8 || null,
-        }),
-      });
-      const [emotionResult] = await Promise.allSettled([emotionPromise, memoryPromise]);
+      await memoryPromise;
       if (requestId !== state.responseRequestGeneration || state.stopping) return;
-      if (emotionResult.status === "fulfilled") {
-        const data = emotionResult.value;
-        const emotion = ["positive", "neutral", "negative"].includes(data.emotion)
-          ? data.emotion
-          : "neutral";
-        state.currentConversationMode = data.conversation_mode || REALTIME_MODE_LISTENING;
-        if (emotion === "negative") {
-          state.consecutiveNegativeEmotionTurns += 1;
-        } else {
-          state.consecutiveNegativeEmotionTurns = 0;
-        }
-        const strategyLabel = conversationModeLabel(state.currentConversationMode);
-        state.pendingEmotionDetail = {
-          label: strategyLabel,
-          prompt: data.prompt || "",
-          response: joinTraceBlocks(
-            traceBlock("分類結果", {
-              emotion: emotionLabel(emotion),
-              conversation_mode: strategyLabel,
-            }),
-            data.raw_content || ""
-          ),
-        };
-        addTraceCard(
-          "情緒/策略分類",
-          state.pendingEmotionDetail.label,
-          traceContent(state.pendingEmotionDetail.prompt, state.pendingEmotionDetail.response),
-          { statusClass: "strategy-tag" }
-        );
-        state.pendingEmotionDetail = null;
-        updateModeUi();
-      } else {
-        const error = emotionResult.reason;
-        state.currentConversationMode = REALTIME_MODE_LISTENING;
-        state.pendingEmotionDetail = {
-          label: "失敗，使用傾聽模式",
-          prompt: "情緒分類 prompt 建立或呼叫失敗",
-          response: error.message,
-        };
-        addTraceCard(
-          "情緒/策略分類",
-          state.pendingEmotionDetail.label,
-          traceContent(state.pendingEmotionDetail.prompt, state.pendingEmotionDetail.response),
-          { statusClass: "strategy-tag" }
-        );
-        state.pendingEmotionDetail = null;
-        setNotice(`情緒判斷失敗，使用傾聽模式：${error.message}`);
-        updateModeUi();
-      }
       await requestAssistantResponse("default", "auto");
     }
 
@@ -2937,7 +3219,8 @@
         const data = await fetchJson(apiPath("/api/realtime-memory-recall"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        body: JSON.stringify({
+            account_id: state.sessionHash,
             session_hash: state.sessionHash,
             user_transcript: getLatestUserTranscript(),
           }),
@@ -2961,7 +3244,7 @@
       }
     }
 
-    async function requestAssistantResponse(kind, toolChoice, traceOverride = null, promptSuffix = "") {
+    async function requestAssistantResponse(kind, toolChoice, toolOutput = "") {
       if (!state.dc || state.dc.readyState !== "open" || state.stopping) return;
       const requestId = state.responseRequestGeneration;
       const latestUserTranscript = getLatestUserTranscript();
@@ -2971,43 +3254,27 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind,
-          conversation_mode: state.currentConversationMode,
           user_transcript: latestUserTranscript,
+          account_id: state.sessionHash,
           session_hash: state.sessionHash,
           memory_context: state.currentMemoryContext,
           memory_status: state.currentMemoryStatus,
           recall_memory: !state.currentMemoryResolved,
+          tool_output: toolOutput,
+          mood_aspect_state: state.moodAspectState,
         }),
       });
       if (requestId !== state.responseRequestGeneration || state.stopping) return;
       state.currentMemoryContext = data.memory_context || "";
       state.currentMemoryStatus = data.memory_status || "";
       state.currentMemoryResolved = true;
-      state.pendingEmotionDetail = null;
-      const assistantInstructions = `${data.instructions}${promptSuffix ? `\n\n${promptSuffix}` : ""}`;
-      const priorPrompt = traceOverride?.prompt || "";
-      const priorResponse = traceOverride?.response || "";
-      const assistantPrompt = joinTraceBlocks(
-        priorPrompt,
-        traceBlock(traceOverride ? "工具後助理 Prompt" : "助理 Prompt", assistantInstructions)
-      );
-      const responsePrefix = priorResponse;
-      const pendingResponse = responsePrefix
-        ? joinTraceBlocks(responsePrefix, traceBlock("模型回覆", "等待模型回應"))
-        : "等待模型回應";
-      const assistantTrace = traceOverride;
-      if (traceOverride) {
-        updateTraceCard(assistantTrace, {
-          status: "等待模型回應",
-          prompt: assistantPrompt,
-          response: pendingResponse,
-        });
-      }
-      if (assistantTrace) {
-        assistantTrace.prompt = assistantPrompt;
-        assistantTrace.responsePrefix = responsePrefix;
-      }
-      state.pendingAssistantTrace = assistantTrace;
+      state.moodAspectState = normalizeMoodAspectState(data.mood_aspect_state || state.moodAspectState);
+      const assistantInstructions = data.instructions || "";
+      console.log("[REALTIME OPENAI PROMPT]", {
+        kind,
+        tool_choice: resolvedToolChoice,
+        prompt: assistantInstructions,
+      });
       sendRealtimeEvent({
         type: "response.create",
         response: {
@@ -3023,43 +3290,63 @@
       const output = Array.isArray(response?.output) ? response.output : [];
       const calls = output.filter((item) => item?.type === "function_call");
       if (!calls.length) return false;
-      const responseTrace = state.pendingAssistantTrace;
-      state.pendingAssistantTrace = null;
-      for (let index = 0; index < calls.length; index += 1) {
-        handleFunctionCall(calls[index], index === 0 ? responseTrace : null);
+      for (const call of calls) {
+        handleFunctionCall(call);
       }
       return true;
     }
 
-    async function handleFunctionCall(call, existingTrace = null) {
+    async function handleFunctionCall(call) {
       const callId = call.call_id || "";
       const name = call.name || "";
       const args = parseJsonObject(call.arguments || "{}");
       if (!callId) return;
-      const trace = existingTrace || addTraceCard(toolLabel(name), "呼叫中", traceContent(args, "等待工具回應"));
-      updateTraceCard(trace, {
-        title: toolLabel(name),
-        status: "呼叫中",
-        prompt: args,
-        response: "等待工具回應",
+      setStatus(`工具選擇：${toolStatusLabel(name)}`, {
+        variant: toolStatusVariant(name),
+        force: true,
       });
 
-      if (name === "medical_qa") {
-        await handleMedicalQaTool(callId, args, trace);
+      if (name === "mood_assessment") {
+        await handleMoodAssessmentTool(callId, args);
+      } else if (name === "medical_qa") {
+        await handleMedicalQaTool(callId, args);
       } else if (name === "search_web") {
-        await handleWebSearchTool(callId, args, trace);
+        await handleWebSearchTool(callId, args);
       } else {
-        updateTraceCard(trace, {
-          status: "未知工具",
-          prompt: args,
-          response: `Unknown tool: ${name}`,
-        });
         sendFunctionCallOutput(callId, `Unknown tool: ${name}`);
         await requestAssistantResponse("default", "none");
       }
     }
 
-    async function handleMedicalQaTool(callId, args, trace) {
+    async function handleMoodAssessmentTool(callId, args) {
+      const query = (args.query || getLatestUserTranscript() || "").trim();
+      try {
+        const data = await fetchJson(apiPath("/api/realtime-mood-assessment"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            recent_messages: state.recentMessages,
+            mood_aspect_state: state.moodAspectState,
+          }),
+        });
+        const plan = data.plan || {};
+        state.moodAspectState = normalizeMoodAspectState(data.mood_aspect_state || plan.mood_aspect_state || state.moodAspectState);
+        const toolOutput = buildMoodAssessmentNaturalOutput(data, plan);
+        sendFunctionCallOutput(callId, toolOutput);
+        const kind = data.status === "ok" ? "mood_assessment_assistant" : "mood_assessment_fallback";
+        const moodStatus = moodAssessmentStatus(data, plan);
+        setStatus(moodStatus.text, { variant: moodStatus.variant, force: true });
+        await requestAssistantResponse(kind, "none", toolOutput);
+        setStatus(moodStatus.text, { variant: moodStatus.variant, force: true });
+      } catch (error) {
+        const toolOutput = "情緒支持策略暫時無法取得。請仍先接住使用者剛才的感受，不診斷、不評分；如果需要追問，只問一個低負擔、貼近情境的問題。";
+        sendFunctionCallOutput(callId, toolOutput);
+        await requestAssistantResponse("mood_assessment_fallback", "none", toolOutput);
+      }
+    }
+
+    async function handleMedicalQaTool(callId, args) {
       const query = (args.query || getLatestUserTranscript() || "").trim();
       try {
         const data = await fetchJson(apiPath("/api/realtime-medical-qa"), {
@@ -3074,14 +3361,9 @@
           error: data.message || undefined,
         };
         const toolOutput = JSON.stringify(outputPayload, null, 2);
-        updateTraceCard(trace, {
-          status: `${data.status || "完成"}，已取得工具結果`,
-          prompt: query,
-          response: toolOutput,
-        });
         sendFunctionCallOutput(callId, JSON.stringify(outputPayload));
         const kind = data.status === "ok" ? "medical_qa_assistant" : "medical_qa_fallback";
-        await requestAssistantResponse(kind, "none", trace, `工具輸出：\n${toolOutput}`);
+        await requestAssistantResponse(kind, "none", toolOutput);
       } catch (error) {
         const outputPayload = {
           status: "medical_qa_failed",
@@ -3090,16 +3372,11 @@
         };
         const toolOutput = JSON.stringify(outputPayload, null, 2);
         sendFunctionCallOutput(callId, JSON.stringify(outputPayload));
-        updateTraceCard(trace, {
-          status: "失敗，已記錄工具結果",
-          prompt: query,
-          response: toolOutput,
-        });
-        await requestAssistantResponse("medical_qa_fallback", "none", trace, `工具輸出：\n${toolOutput}`);
+        await requestAssistantResponse("medical_qa_fallback", "none", toolOutput);
       }
     }
 
-    async function handleWebSearchTool(callId, args, trace) {
+    async function handleWebSearchTool(callId, args) {
       const query = (args.query || getLatestUserTranscript() || "").trim();
       try {
         const data = await fetchJson(apiPath("/api/realtime-web-search"), {
@@ -3107,7 +3384,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             query,
-            recent_messages: state.emotionHistory,
+            recent_messages: state.recentMessages,
           }),
         });
         const outputPayload = {
@@ -3117,14 +3394,9 @@
           error: data.message || undefined,
         };
         const toolOutput = JSON.stringify(outputPayload, null, 2);
-        updateTraceCard(trace, {
-          status: `${data.status || "完成"}，已取得工具結果`,
-          prompt: data.prompt || query,
-          response: toolOutput,
-        });
         sendFunctionCallOutput(callId, JSON.stringify(outputPayload));
         const kind = data.web_context ? "web_search_assistant" : "web_search_fallback";
-        await requestAssistantResponse(kind, "none", trace, `工具輸出：\n${toolOutput}`);
+        await requestAssistantResponse(kind, "none", toolOutput);
       } catch (error) {
         const outputPayload = {
           status: "search_failed",
@@ -3133,12 +3405,7 @@
         };
         const toolOutput = JSON.stringify(outputPayload, null, 2);
         sendFunctionCallOutput(callId, JSON.stringify(outputPayload));
-        updateTraceCard(trace, {
-          status: "失敗，已記錄工具結果",
-          prompt: query,
-          response: toolOutput,
-        });
-        await requestAssistantResponse("web_search_fallback", "none", trace, `工具輸出：\n${toolOutput}`);
+        await requestAssistantResponse("web_search_fallback", "none", toolOutput);
       }
     }
 
@@ -3300,6 +3567,7 @@
       const endedAtMs = Date.now();
       const metadata = compactObject({
         schema_version: "companion-thesis-realtime-v1",
+        account_id: state.sessionHash,
         session_hash: state.sessionHash,
         started_at_ms: state.startedAtMs,
         ended_at_ms: endedAtMs,
@@ -3332,6 +3600,7 @@
       });
       const transcript = {
         schema_version: "companion-thesis-transcript-v1",
+        account_id: state.sessionHash,
         session_hash: state.sessionHash,
         timebase: "seconds_since_session_started_at_ms",
         participant_role: "user",
@@ -3351,6 +3620,7 @@
     async function uploadArchive(archive) {
       if (!archive) return;
       const formData = new FormData();
+      formData.append("account_id", state.sessionHash);
       formData.append("session_hash", state.sessionHash);
       formData.append("metadata_file", archive.metadataBlob, "metadata.json");
       formData.append("transcript_file", archive.transcriptBlob, "transcript.json");
@@ -3495,6 +3765,15 @@
         showDepressionMessage("評估未啟用", "目前伺服器已停用憂鬱偵測。");
         setStatus("已上傳", { force: true });
         setNotice("上傳完成。憂鬱偵測目前已停用。");
+        return true;
+      }
+      if (status === "unavailable") {
+        showDepressionMessage(
+          "GPU worker 不可用",
+          data.depression_error || "目前沒有可用的 GPU 憂鬱偵測 worker。"
+        );
+        setStatus("已上傳", { force: true });
+        setNotice("上傳完成。GPU worker 目前不可用，未執行憂鬱偵測。");
         return true;
       }
       return false;
@@ -3753,6 +4032,7 @@
       state.currentMemoryContext = "";
       state.currentMemoryResolved = false;
       state.currentMemoryStatus = "";
+      state.moodAspectState = { covered_aspects: [] };
       clearDepressionPolling();
       state.depressionRunId = "";
       state.depressionPollAttempts = 0;
@@ -3766,6 +4046,7 @@
       setSessionPhase(SESSION_PHASE.SELECTING);
       setMicrophoneButtonEnabled(false);
       setMicrophoneMuted(false);
+      els.textInput.value = "";
       stopVisualizer();
       els.conversationView.classList.remove("active");
       document.body.classList.remove("call-active");
@@ -3831,12 +4112,18 @@
           endButtonController.showIdle();
       }
       setMicrophoneButtonEnabled(phase === SESSION_PHASE.LIVE && Boolean(state.localStream));
+      setTextInputEnabled(phase === SESSION_PHASE.LIVE && state.dc?.readyState === "open");
       els.chooseAgainButton.disabled = phase !== SESSION_PHASE.ENDED && phase !== SESSION_PHASE.ERROR;
     }
 
     function setAllButtonsDisabled(disabled) {
-      for (const button of document.querySelectorAll("button")) {
+      for (const button of document.querySelectorAll("button, .call-btn[role='button']")) {
         button.disabled = disabled;
+        if (!(button instanceof HTMLButtonElement)) {
+          button.toggleAttribute("data-disabled", disabled);
+          button.setAttribute("aria-disabled", String(disabled));
+          button.tabIndex = disabled ? -1 : 0;
+        }
       }
       document.body.classList.toggle("controls-disabled", disabled);
       document.body.toggleAttribute("aria-busy", disabled);
@@ -3994,24 +4281,23 @@
       els.muteMicButton.toggleAttribute("disabled", disabled);
     }
 
-    function updateModeUi() {
-      if (els.modeText) {
-        els.modeText.textContent = conversationModeLabel(state.currentConversationMode) || "-";
-      }
-      if (els.negativeText) {
-        els.negativeText.textContent = `${state.consecutiveNegativeEmotionTurns} / 6`;
-      }
+    function setTextInputEnabled(enabled) {
+      const disabled = !enabled || state.sessionStarting || state.uploading || state.stopping || state.restartReady;
+      els.textInput.disabled = disabled;
+      els.sendTextButton.disabled = disabled;
+      els.textInputForm.toggleAttribute("aria-disabled", disabled);
     }
 
     function getLatestUserTranscript() {
-      for (let index = state.emotionHistory.length - 1; index >= 0; index -= 1) {
-        const item = state.emotionHistory[index];
+      for (let index = state.recentMessages.length - 1; index >= 0; index -= 1) {
+        const item = state.recentMessages[index];
         if (item.role === "user") return item.text;
       }
       return "";
     }
 
-    function statusVisualKey(text) {
+    function statusVisualKey(text, variant = "") {
+      if (variant) return `${variant}:${text || ""}`;
       if (["啟動中", "重新啟動中"].includes(text)) return "starting";
       if (text === "連線中") return "connecting";
       if (text === "已連線") return "connected";
@@ -4020,8 +4306,9 @@
       if (["出錯", "錯誤"].includes(text)) return "error";
       if (text === "上傳失敗") return "upload-error";
       if (text === "助理回覆中") return "assistant-speaking";
+      if (String(text || "").startsWith("工具選擇：")) return `tool:${text}`;
       if (["使用者說話中", "說話中", "聆聽中"].includes(text)) return "listening";
-      if (["正在思考", "思考中", "判斷中", "情緒判斷中", "情緒判斷與記憶搜尋中", "評估中"].includes(text)) {
+      if (["正在思考", "思考中", "判斷中", "評估中"].includes(text)) {
         return "thinking";
       }
       if (text === "上傳中") return "uploading";
@@ -4056,56 +4343,105 @@
       }, STATUS_LISTENING_SETTLE_MS);
     }
 
-    function setStatus(text, { force = false } = {}) {
+    function setStatus(text, { force = false, variant = "" } = {}) {
       const statusLabel = els.callStatusLabel;
       if (!statusLabel) return;
       clearStatusListeningTimer();
 
-      const visualKey = statusVisualKey(text);
+      const visualKey = statusVisualKey(text, variant);
       if (!force && state.statusVisualKey === visualKey) return;
       state.statusVisualKey = visualKey;
 
       const spinnerIcon = `<svg class="status-icon status-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; animation: status-rotate 1s linear infinite; display: block;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>`;
-      const greenDotIcon = `<svg class="status-icon status-dot" viewBox="0 0 24 24" fill="currentColor" style="width: 8px; height: 8px; animation: status-pulse 1.5s ease-in-out infinite; color: #34c759; display: block;"><circle cx="12" cy="12" r="10"></circle></svg>`;
-      const redDotIcon = `<svg class="status-icon status-dot" viewBox="0 0 24 24" fill="currentColor" style="width: 8px; height: 8px; animation: status-pulse 1.5s ease-in-out infinite; color: #ff3b30; display: block;"><circle cx="12" cy="12" r="10"></circle></svg>`;
+      const greenDotIcon = `<svg class="status-icon status-dot" viewBox="0 0 24 24" fill="currentColor" style="width: 8px; height: 8px; animation: status-pulse 1.5s ease-in-out infinite; display: block;"><circle cx="12" cy="12" r="10"></circle></svg>`;
+      const redDotIcon = `<svg class="status-icon status-dot" viewBox="0 0 24 24" fill="currentColor" style="width: 8px; height: 8px; animation: status-pulse 1.5s ease-in-out infinite; display: block;"><circle cx="12" cy="12" r="10"></circle></svg>`;
       const soundwaveIcon = `<span class="status-wave-bars" aria-hidden="true"><span class="bar1"></span><span class="bar2"></span><span class="bar3"></span></span>`;
-      const speakerIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="#5856d6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; display: block;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" style="animation: status-pulse 1.2s ease-in-out infinite; transform-origin: center;"></path></svg>`;
-      const sparkleIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="currentColor" style="width: 13px; height: 13px; color: #ff9500; animation: status-pulse 1.2s ease-in-out infinite; display: block;"><path d="M12 2l2.4 6.6 6.6 2.4-6.6 2.4-2.4 6.6-2.4-6.6-6.6-2.4 6.6-2.4z"></path></svg>`;
-      const cloudUploadIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="#007aff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; display: block;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" style="animation: status-bounce-y 1s ease-in-out infinite; display: block;"></path></svg>`;
-      const checkIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="#34c759" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px; display: block;"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-      const crossIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px; display: block;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+      const speakerIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; display: block;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" style="animation: status-pulse 1.2s ease-in-out infinite; transform-origin: center;"></path></svg>`;
+      const sparkleIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="currentColor" style="width: 13px; height: 13px; animation: status-pulse 1.2s ease-in-out infinite; display: block;"><path d="M12 2l2.4 6.6 6.6 2.4-6.6 2.4-2.4 6.6-2.4-6.6-6.6-2.4 6.6-2.4z"></path></svg>`;
+      const cloudUploadIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; display: block;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" style="animation: status-bounce-y 1s ease-in-out infinite; display: block;"></path></svg>`;
+      const checkIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px; display: block;"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+      const crossIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px; display: block;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+      const globeIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; animation: status-pulse 1.25s ease-in-out infinite; display: block;"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20"></path><path d="M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20"></path></svg>`;
+      const medicalIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; animation: status-pulse 1.25s ease-in-out infinite; display: block;"><path d="M12 5v14M5 12h14"></path></svg>`;
+      const clipboardIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; animation: status-pulse 1.25s ease-in-out infinite; display: block;"><rect x="6" y="4" width="12" height="17" rx="2"></rect><path d="M9 4.5A2.5 2.5 0 0 1 11.5 2h1A2.5 2.5 0 0 1 15 4.5"></path><path d="M9 11h6M9 15h4"></path></svg>`;
+      const compassIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; animation: status-pulse 1.25s ease-in-out infinite; display: block;"><circle cx="12" cy="12" r="10"></circle><path d="m16 8-2.2 5.8L8 16l2.2-5.8z"></path></svg>`;
+      const heartIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; animation: status-pulse 1.25s ease-in-out infinite; display: block;"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"></path></svg>`;
+      const arrowIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; animation: status-bounce-y 1.1s ease-in-out infinite; display: block;"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>`;
+      const shieldIcon = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; animation: status-pulse 1.25s ease-in-out infinite; display: block;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path></svg>`;
 
       const map = {
-        "啟動中": { text: "啟動中", icon: spinnerIcon },
-        "重新啟動中": { text: "啟動中", icon: spinnerIcon },
-        "連線中": { text: "連線中", icon: spinnerIcon },
-        "已連線": { text: "已連線", icon: greenDotIcon },
-        "未連線": { text: "未連線", icon: redDotIcon },
-        "斷線": { text: "斷線", icon: redDotIcon },
-        "出錯": { text: "連線出錯", icon: crossIcon },
-        "錯誤": { text: "連線出錯", icon: crossIcon },
-        "助理回覆中": { text: "助理說話中", icon: speakerIcon },
-        "使用者說話中": { text: "聆聽中", icon: soundwaveIcon },
-        "說話中": { text: "聆聽中", icon: soundwaveIcon },
-        "聆聽中": { text: "聆聽中", icon: soundwaveIcon },
-        "正在思考": { text: "思考中", icon: sparkleIcon },
-        "思考中": { text: "思考中", icon: sparkleIcon },
-        "判斷中": { text: "思考中", icon: sparkleIcon },
-        "情緒判斷中": { text: "思考中", icon: sparkleIcon },
-        "情緒判斷與記憶搜尋中": { text: "思考中", icon: sparkleIcon },
-        "評估中": { text: "思考中", icon: sparkleIcon },
-        "上傳中": { text: "上傳中", icon: cloudUploadIcon },
-        "已上傳": { text: "已上傳", icon: checkIcon },
-        "上傳失敗": { text: "上傳失敗", icon: crossIcon }
+        "啟動中": { text: "啟動中", icon: spinnerIcon, variant: "working" },
+        "重新啟動中": { text: "啟動中", icon: spinnerIcon, variant: "working" },
+        "連線中": { text: "連線中", icon: spinnerIcon, variant: "working" },
+        "已連線": { text: "已連線", icon: greenDotIcon, variant: "connected" },
+        "未連線": { text: "未連線", icon: redDotIcon, variant: "offline" },
+        "斷線": { text: "斷線", icon: redDotIcon, variant: "offline" },
+        "出錯": { text: "連線出錯", icon: crossIcon, variant: "error" },
+        "錯誤": { text: "連線出錯", icon: crossIcon, variant: "error" },
+        "助理回覆中": { text: "回覆中", icon: speakerIcon, variant: "replying" },
+        "使用者說話中": { text: "聆聽中", icon: soundwaveIcon, variant: "listening" },
+        "說話中": { text: "聆聽中", icon: soundwaveIcon, variant: "listening" },
+        "聆聽中": { text: "聆聽中", icon: soundwaveIcon, variant: "listening" },
+        "正在思考": { text: "思考中", icon: sparkleIcon, variant: "thinking" },
+        "思考中": { text: "思考中", icon: sparkleIcon, variant: "thinking" },
+        "判斷中": { text: "思考中", icon: sparkleIcon, variant: "thinking" },
+        "評估中": { text: "思考中", icon: sparkleIcon, variant: "thinking" },
+        "上傳中": { text: "上傳中", icon: cloudUploadIcon, variant: "uploading" },
+        "已上傳": { text: "已上傳", icon: checkIcon, variant: "uploaded" },
+        "上傳失敗": { text: "上傳失敗", icon: crossIcon, variant: "error" }
       };
 
-      const matched = map[text] || { text: text, icon: greenDotIcon };
+      const variantColors = {
+        connected: "#1c1c1e",
+        offline: "#1c1c1e",
+        error: "#ff3b30",
+        listening: "#007aff",
+        thinking: "#ff9500",
+        replying: "#5856d6",
+        uploading: "#1c1c1e",
+        uploaded: "#1c1c1e",
+        working: "#8e8e93",
+        "tool-web": "#007aff",
+        "tool-medical": "#00a36c",
+        "tool-phq": "#af52de",
+        tool: "#af52de",
+        "stage-exploration": "#007aff",
+        "stage-comforting": "#ff2d55",
+        "stage-action": "#30a46c",
+        "stage-crisis": "#ff3b30",
+      };
+      const variantIconColors = {
+        connected: "#34c759",
+        offline: "#ff3b30",
+        uploading: "#007aff",
+        uploaded: "#34c759",
+      };
+      const dynamicToolIcon = variant === "tool-web" ? globeIcon
+        : variant === "tool-medical" ? medicalIcon
+          : variant === "tool-phq" ? clipboardIcon
+            : null;
+      const dynamicStageIcon = variant === "stage-exploration" ? compassIcon
+        : variant === "stage-comforting" ? heartIcon
+          : variant === "stage-action" ? arrowIcon
+            : variant === "stage-crisis" ? shieldIcon
+              : null;
+      const matched = map[text] || {
+        text,
+        icon: dynamicToolIcon || dynamicStageIcon || greenDotIcon,
+        variant: variant || "connected",
+      };
+      const resolvedVariant = variant || matched.variant || "connected";
+      const color = variantColors[resolvedVariant] || "#1c1c1e";
+      const iconColor = variantIconColors[resolvedVariant] || color;
+      const renderedStatus = `<span class="status-icon-color" style="color: ${iconColor};">${matched.icon}</span><span>${matched.text}</span>`;
       if (els.statusPill) {
-        els.statusPill.innerHTML = `${matched.icon}<span>${matched.text}</span>`;
+        els.statusPill.innerHTML = renderedStatus;
+        els.statusPill.style.color = color;
         els.statusPill.style.opacity = "1";
         els.statusPill.style.visibility = "visible";
       }
-      statusLabel.innerHTML = `${matched.icon}<span>${matched.text}</span>`;
+      statusLabel.style.color = color;
+      statusLabel.innerHTML = renderedStatus;
 
       if (!text || text === "未連線" || text === "斷線") {
         statusLabel.style.opacity = "0";
@@ -4156,6 +4492,84 @@
 
     function jsonBlob(value) {
       return new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" });
+    }
+
+    function normalizeMoodAspectState(value) {
+      const source = value && typeof value === "object" ? value : {};
+      const covered = Array.isArray(source.covered_aspects)
+        ? source.covered_aspects.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+      const remaining = Array.isArray(source.remaining_aspects)
+        ? source.remaining_aspects.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+      return {
+        covered_aspects: [...new Set(covered)],
+        remaining_aspects: [...new Set(remaining)],
+      };
+    }
+
+    function buildMoodAssessmentNaturalOutput(data, plan) {
+      const source = plan && typeof plan === "object" ? plan : {};
+      const guidance = String(data.response_guidance || source.response_guidance || "").trim();
+      const followUp = String(data.suggested_follow_up || source.suggested_follow_up || "").trim();
+      const riskLevel = String(data.risk_level || source.risk_level || "").trim();
+      const parts = [];
+      if (riskLevel === "high" || riskLevel === "imminent") {
+        parts.push("這一輪請先溫和、直接地確認使用者當下是否安全，不要急著追問其他面向。");
+      }
+      if (guidance) {
+        parts.push(guidance);
+      }
+      if (followUp) {
+        parts.push(`如果要往下接，可以自然地問：「${followUp}」`);
+      }
+      if (!parts.length) {
+        parts.push("請先接住使用者剛才的感受，不診斷、不評分；如果需要追問，只問一個低負擔、貼近情境的問題。");
+      }
+      return parts.join("\n");
+    }
+
+    function moodAspectStatusLabels(keys, labels) {
+      const shortLabels = {
+        interest: "興趣",
+        mood: "心情",
+        sleep: "睡眠",
+        fatigue: "疲倦",
+        appetite_weight: "食慾",
+        self_worth: "自責",
+        concentration: "注意力",
+        psychomotor: "動作",
+      };
+      const normalizedKeys = Array.isArray(keys) ? keys : [];
+      const normalizedLabels = Array.isArray(labels) ? labels : [];
+      const values = normalizedKeys.length
+        ? normalizedKeys.map((key) => shortLabels[key] || String(key || "").trim()).filter(Boolean)
+        : normalizedLabels.map((label) => String(label || "").replace("或體重", "").replace("沒精神", "").trim()).filter(Boolean);
+      return [...new Set(values)].slice(0, 3);
+    }
+
+    function moodStageStatus(stage) {
+      const map = {
+        exploration: { label: "探索", variant: "stage-exploration" },
+        comforting: { label: "安撫", variant: "stage-comforting" },
+        action: { label: "建議", variant: "stage-action" },
+        crisis_check: { label: "安全確認", variant: "stage-crisis" },
+      };
+      return map[String(stage || "").trim()] || { label: "探索", variant: "stage-exploration" };
+    }
+
+    function moodAssessmentStatus(data, plan) {
+      const source = plan && typeof plan === "object" ? plan : {};
+      const stage = moodStageStatus(data.support_stage || source.support_stage);
+      const aspects = moodAspectStatusLabels(
+        data.current_aspects || source.current_aspects,
+        data.current_aspect_labels || source.current_aspect_labels
+      );
+      const textParts = aspects.length ? [...aspects, stage.label] : ["情緒問答", stage.label];
+      return {
+        text: textParts.join("｜"),
+        variant: stage.variant,
+      };
     }
 
     function compactObject(value) {
