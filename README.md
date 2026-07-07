@@ -85,31 +85,24 @@ curl -X POST http://127.0.0.1:9050/google_form \
 Terminal 1：Hindsight
 
 ```bash
-cd ~/companion-chat
 sudo docker compose -f docker-compose.hindsight.yml up -d
 ```
 
 Terminal 2：Depression worker
 
 ```bash
-cd ~/companion-chat
-source .venv/bin/activate
 python -m app.depression_worker --gpu-id 0
 ```
 
 Terminal 3：Realtime
 
 ```bash
-cd ~/companion-chat
-source .venv/bin/activate
 python -m app.server_realtime
 ```
 
 Terminal 4：Feedback
 
 ```bash
-cd ~/companion-chat
-source .venv/bin/activate
 python -m app.server_feedback
 ```
 
