@@ -125,7 +125,7 @@ DATABASE_PATH = resolve_database_path(PROJECT_ROOT)
 
 WEB_SEARCH_MODEL = "gpt-5.4-mini"
 MOOD_ASSESSMENT_MODEL = "gpt-5.4-mini"
-REALTIME_MODEL = "gpt-realtime"
+REALTIME_MODEL = "gpt-realtime-2"
 REALTIME_TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
 REALTIME_DEFAULT_VOICE = "coral"
 openai_client = None
